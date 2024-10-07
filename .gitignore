@@ -30,3 +30,10 @@
 *.exe
 *.out
 *.app
+
+
+.cache
+.vscode
+build
+protocols/*.cpp
+protocols/*.hpp
