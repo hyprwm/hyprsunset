@@ -2,8 +2,7 @@
 An application to enable a blue-light filter on Hyprland
 
 > !IMPORTANT!
-> This application relies on https://github.com/hyprwm/Hyprland/pull/8023
-> which is only available in hyprland-git right now!
+> This app requires hyprland>=0.45.0
 
 ## Usage
 
