@@ -9,6 +9,8 @@
 
 #include "helpers/Log.hpp"
 
+#include "InstanceLock.hpp"
+
 #include <hyprutils/math/Mat3x3.hpp>
 #include <hyprutils/memory/WeakPtr.hpp>
 using namespace Hyprutils::Math;
@@ -51,6 +53,7 @@ struct {
     std::vector<SP<SOutput>>          outputs;
     bool                              initialized = false;
     Mat3x3                            ctm;
+    InstanceLock                      instLock;
 } state;
 
 void sigHandler(int sig) {
@@ -82,6 +85,11 @@ static void printHelp() {
 
 int main(int argc, char** argv, char** envp) {
     Debug::log(NONE, "┏ hyprsunset v{} ━━╸\n┃", HYPRSUNSET_VERSION);
+
+    if (!state.instLock.isOnlyInstance) {
+        Debug::log(NONE, "✖ Another instance of hyprsunset is running");
+        return 1;
+    }
 
     unsigned long long KELVIN    = 6000; // default
     bool               kelvinSet = false, identity = false;
@@ -140,6 +148,7 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
 
+    signal(SIGINT, sigHandler);
     signal(SIGTERM, sigHandler);
 
     state.pRegistry = makeShared<CCWlRegistry>((wl_proxy*)wl_display_get_registry(state.wlDisplay));
