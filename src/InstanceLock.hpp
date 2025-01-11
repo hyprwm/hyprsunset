@@ -1,46 +1,31 @@
+#pragma once
+
 #include <cerrno>
 #include <cstring>
-#include <signal.h>
-#include <sys/file.h>
-#include <thread>
-#include <unistd.h>
+#include <fcntl.h>
 #include <wait.h>
+#include <fstream>
+
+#include "helpers/Log.hpp"
 
 class InstanceLock {
-public:
-    InstanceLock() : pPid(getpid()) {
-        using namespace std::chrono_literals;
-
-        pFd = open(pLockName.c_str(), O_CREAT | O_RDWR, 0666);
-
-        if (pFd == -1) {
-            int         ern       = errno;
-            const char* ernString = strerror(ern);
-            Debug::log(NONE, "Failed to open instance lock {}: {}", pLockName, ernString);
-            return; // it is not the only instance
-        }
+  public:
+    InstanceLock() {
+        if (pFd == -1)
+            return;
 
         constexpr int MAX_TRIES = 50;
         int           i         = 0;
 
         while (i < MAX_TRIES && !tryLock()) {
             i++;
-            std::this_thread::sleep_for(1000ms);
         }
 
         if (i == MAX_TRIES) {
-            Debug::log(NONE, "Failed to set instance lock {}", pLockName);
+            Debug::log(NONE, "✖ Failed to set instance lock {}", pLockName);
             return; // it is not the only instance
         }
 
-        if (write(pFd, &pPid, sizeof(pPid)) == -1) {
-            int         ern       = errno;
-            const char* ernString = strerror(ern);
-            Debug::log(NONE, "Failed to write current pid to lock file: {}", ernString);
-        }
-
-        // without sleep the color stays as if no filter was applied
-        std::this_thread::sleep_for(100ms);
         isOnlyInstance = true;
     }
 
@@ -51,74 +36,73 @@ public:
     bool isOnlyInstance = false;
 
   private:
-    pid_t pPid = -1;
-    int   pFd  = -1;
+    std::string  pLockName{getLockName()};
+    std::fstream pLockFile{pLockName, std::fstream::out | std::fstream::trunc};
+    int          pFd{getFd()};
 
   private:
-    const std::string pLockName = getLockName();
+    int getFd() {
+        if (pLockFile)
+            return pLockFile.native_handle();
 
-  private:
-    std::string getLockName()
-    {
-        std::string runtimeDir = getenv("XDG_RUNTIME_DIR");
-        if (runtimeDir.back() != '/')
-            runtimeDir += '/';
-        runtimeDir += "hypr/.hyprsunsetlockfile";
+        Debug::log(NONE, "✖ Failed to open {}", pLockName);
 
-        return runtimeDir;
+        return -1;
+    }
+
+    std::string getLockName() {
+        std::string lockname = getenv("XDG_RUNTIME_DIR");
+        if (lockname.back() != '/')
+            lockname += '/';
+        lockname += "hypr/.hyprsunsetlockfile";
+
+        return lockname;
     }
 
     bool tryLock() {
-        if (flock(pFd, LOCK_EX | LOCK_NB) == -1) {
-            // it will never kill old then
-            if (!killOld())
+        struct flock flstate{};
+        if (fcntl(pFd, F_GETLK, &flstate) == -1) {
+            Debug::log(NONE, "✖ failed to get flock state: {}", strerror(errno));
+            return false;
+        }
+
+        if (flstate.l_type == F_WRLCK) {
+            if (!killOld(flstate.l_pid))
                 return false;
         }
+
+        struct flock fl{};
+        fl.l_type   = F_WRLCK;
+        fl.l_whence = SEEK_SET;
+        fl.l_pid    = -1;
+
+        if (fcntl(pFd, F_SETLKW, &fl) == -1)
+            Debug::log(NONE, "✖ set flock failed: {}", strerror(errno));
 
         return true;
     }
 
     void unlock() {
-        if (flock(pFd, LOCK_UN) == -1) {
-            int         ern       = errno;
-            const char* ernString = strerror(ern);
-            Debug::log(NONE, "Failed to unlock the instance {}: {}", pLockName, ernString);
-        }
-        if (close(pFd) == -1) {
-            int         ern       = errno;
-            const char* ernString = strerror(ern);
-            Debug::log(NONE, "Failed to close lock fd {}: {}", pLockName, ernString);
-        }
+        struct flock fl{};
+        fl.l_type   = F_UNLCK;
+        fl.l_whence = SEEK_SET;
+        fl.l_pid    = -1;
+
+        if (fcntl(pFd, F_SETLKW, &fl) == -1)
+            Debug::log(NONE, "✖ failed to unlock the instance {}: {}", pLockName, strerror(errno));
     }
 
-    bool killOld() {
-        pid_t oldPid = getOldPid();
-        if (oldPid == -1)
+    bool killOld(pid_t oldPid) {
+        if (oldPid <= 0)
             return false;
 
         if (kill(oldPid, SIGTERM) == -1) {
-            int         ern       = errno;
-            const char* ernString = strerror(ern);
-            Debug::log(NONE, "Failed to to kill the other running instance: {}", ernString);
-
+            Debug::log(NONE, "✖ failed to to kill the other running instance: {}", strerror(errno));
             return false;
         }
 
         waitpid(oldPid, nullptr, 0);
 
         return true;
-    }
-
-    pid_t getOldPid() {
-        pid_t oldPid = 0;
-        if (read(pFd, &oldPid, sizeof(oldPid)) == -1) {
-            int         ern       = errno;
-            const char* ernString = strerror(ern);
-            Debug::log(NONE, "Failed to read pid of the other running instance: {}", ernString);
-
-            return -1;
-        }
-
-        return oldPid;
     }
 };
