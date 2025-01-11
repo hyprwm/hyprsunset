@@ -55,17 +55,25 @@ public:
     int   pFd  = -1;
 
   private:
-    static constexpr const char* pLockName = "/tmp/hyprsunsetlockfile";
+    const std::string pLockName = getLockName();
 
   private:
+    std::string getLockName()
+    {
+        std::string runtimeDir = getenv("XDG_RUNTIME_DIR");
+        if (runtimeDir.back() != '/')
+            runtimeDir += '/';
+        runtimeDir += "hypr/.hyprsunsetlockfile";
+
+        return runtimeDir;
+    }
+
     bool tryLock() {
         if (flock(pFd, LOCK_EX | LOCK_NB) == -1) {
             // it will never kill old then
             if (!killOld())
                 return false;
         }
-
-        Debug::log(INFO, "Acquired lock");
 
         return true;
     }
@@ -76,19 +84,15 @@ public:
             const char* ernString = strerror(ern);
             Debug::log(NONE, "Failed to unlock the instance {}: {}", pLockName, ernString);
         }
-
         if (close(pFd) == -1) {
             int         ern       = errno;
             const char* ernString = strerror(ern);
             Debug::log(NONE, "Failed to close lock fd {}: {}", pLockName, ernString);
         }
-
-        Debug::log(INFO, "Unlocked");
     }
 
     bool killOld() {
         pid_t oldPid = getOldPid();
-        Debug::log(INFO, "oldPid: {}", oldPid);
         if (oldPid == -1)
             return false;
 
@@ -101,8 +105,6 @@ public:
         }
 
         waitpid(oldPid, nullptr, 0);
-
-        Debug::log(INFO, "Killed: {}", oldPid);
 
         return true;
     }
