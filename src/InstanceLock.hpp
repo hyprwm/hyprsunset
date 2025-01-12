@@ -1,72 +1,172 @@
 #pragma once
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
-#include <fcntl.h>
 #include <fstream>
+#include <iostream>
 #include <pwd.h>
+#include <ranges>
 #include <sys/types.h>
 #include <thread>
 #include <wait.h>
 
 #include "helpers/Log.hpp"
 
+#include "IPCSemaphore.hpp"
+
 class InstanceLock {
   public:
     InstanceLock() {
-        if (pFd == -1)
-            return;
+        static constexpr const char* SEM_NAME = "/hyprsunsetlocksemaphore";
+        IPCSemaphore                 fileSem{SEM_NAME};
+        auto                         fileLock = fileSem.GetLock();
 
-        constexpr int MAX_TRIES = 50;
-        int           i         = 0;
+        createLockFileIfNotExist();
 
-        while (i < MAX_TRIES && !tryLock()) {
-            i++;
-        }
-
-        if (i == MAX_TRIES) {
+        if (!lock()) {
             Debug::log(NONE, "✖ Failed to set instance lock {}", pLockName);
-            return; // it is not the only instance
+            return;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         isOnlyInstance = true;
     }
 
     ~InstanceLock() {
-        unlock();
+        auto ids = readLockFile();
+        unlock(ids);
     }
 
     bool isOnlyInstance = false;
 
   private:
-    std::string  pLockName{getLockName()};
-    std::fstream pLockFile{pLockName, std::fstream::out | std::fstream::trunc};
-    int          pFd{getFd()};
+    struct InstanceIdentifier {
+        pid_t       pid = -1;
+        std::string waylandEnv;
+        InstanceIdentifier(pid_t pid, std::string&& display) : pid(pid), waylandEnv(std::move(display)) {}
+
+        std::string toString() const {
+            return std::format("{}\n{}\n", pid, waylandEnv);
+        }
+
+        bool operator==(const InstanceIdentifier& other) const {
+            return pid == other.pid && waylandEnv == other.waylandEnv;
+        }
+    };
+
+    using IdsVec         = std::vector<InstanceIdentifier>;
+    using IdsVecIterator = IdsVec::iterator;
 
   private:
-    int getFd() {
-        if (pLockFile)
-            return pLockFile.native_handle();
+    std::string        pLockName{getLockFileName()};
+    InstanceIdentifier pIdentifer{getInstanceIdentifier()};
 
-        Debug::log(NONE, "✖ Failed to open {}", pLockName);
+  private:
+    bool lock() {
+        auto ids = readLockFile();
 
-        return -1;
+        auto sameEnvIt = findSameEnv(ids);
+
+        if (sameEnvIt != ids.end()) {
+            pid_t oldPid = sameEnvIt->pid;
+
+            if (!killOld(oldPid))
+                return false;
+
+            ids = readLockFile();
+        }
+
+        ids.emplace_back(pIdentifer);
+
+        commitLockFile(ids);
+        return true;
     }
 
-    static std::string getLockName() {
-        return getRuntimeDir() + "/.hyprsunsetlockfile";
+    void unlock(IdsVec& ids) {
+        auto thisInstanceIt = findUs(ids);
+        ids.erase(thisInstanceIt);
+
+        commitLockFile(ids);
     }
 
-    // stolen from Hyprland/hyprctl/main.cpp
+    IdsVec readLockFile() {
+        auto   file = getReadFile();
+
+        IdsVec ids;
+        while (file.peek() != -1) {
+            pid_t       pid = 0;
+            std::string display;
+
+            file >> pid >> display;
+            file.get();
+
+            ids.emplace_back(pid, std::move(display));
+        }
+
+        return ids;
+    }
+
+    void commitLockFile(std::span<const InstanceIdentifier> ids) {
+
+        auto file = getWriteFile();
+        for (const auto& id : ids) {
+            file << id.toString();
+        }
+    }
+
+    static bool killOld(pid_t oldPid) {
+        if (oldPid <= 0)
+            return false;
+
+        if (kill(oldPid, SIGTERM) == -1) {
+            Debug::log(NONE, "✖ Failed to to kill the other running instance: {}", strerror(errno));
+            return false;
+        }
+
+        while (isProcessAlive(oldPid)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        return true;
+    }
+
+    static bool isProcessAlive(pid_t pid) {
+        return kill(pid, 0) == 0 || errno != ESRCH;
+    }
+
+    IdsVecIterator findSameEnv(IdsVec& ids) {
+        return std::ranges::find_if(std::views::all(ids), [this](const InstanceIdentifier& id) { return id.waylandEnv == pIdentifer.waylandEnv; });
+    }
+
+    IdsVecIterator findUs(IdsVec& ids) {
+        return std::ranges::find_if(std::views::all(ids), [this](const InstanceIdentifier& id) { return id == pIdentifer; });
+    }
+
+    void createLockFileIfNotExist() const {
+        std::ofstream give_me_a_name{pLockName, std::fstream::out | std::fstream::app};
+    }
+
+    std::ifstream getReadFile() const {
+        return std::ifstream{pLockName, std::fstream::in};
+    }
+
+    std::ofstream getWriteFile() const {
+        return std::ofstream{pLockName, std::fstream::out | std::fstream::trunc};
+    }
+
+    static std::string getLockFileName() {
+        return getRuntimeDir() + "/hyprsunset.lock";
+    }
+
+    // taken from Hyprland/hyprctl/main.cpp
     static unsigned getUID() {
         const auto UID   = getuid();
         const auto PWUID = getpwuid(UID);
         return PWUID ? PWUID->pw_uid : UID;
     }
 
-    // stolen from Hyprland/hyprctl/main.cpp
+    // taken  from Hyprland/hyprctl/main.cpp
     static std::string getRuntimeDir() {
         const auto XDG = getenv("XDG_RUNTIME_DIR");
 
@@ -78,50 +178,20 @@ class InstanceLock {
         return std::string{XDG} + "/hypr";
     }
 
-    bool tryLock() {
-        struct flock flstate{};
-        if (fcntl(pFd, F_GETLK, &flstate) == -1) {
-            Debug::log(NONE, "✖ failed to get flock state: {}", strerror(errno));
-            return false;
+    // returns pid and WAYLAND_DISPLAY
+    static InstanceIdentifier getInstanceIdentifier() {
+        int pid = getpid();
+        if (pid == -1) {
+            Debug::log(NONE, "✖ Failed getpid: {}", strerror(errno));
+            return {-1, {}};
         }
 
-        if (flstate.l_type == F_WRLCK) {
-            if (!killOld(flstate.l_pid))
-                return false;
+        const char* display = getenv("WAYLAND_DISPLAY");
+        if (!display) {
+            Debug::log(NONE, "✖ Failed getenv(\"WAYLAND_DISPLAY\"): {}", strerror(errno));
+            return {-1, {}};
         }
 
-        struct flock fl{};
-        fl.l_type   = F_WRLCK;
-        fl.l_whence = SEEK_SET;
-        fl.l_pid    = -1;
-
-        if (fcntl(pFd, F_SETLKW, &fl) == -1)
-            Debug::log(NONE, "✖ set flock failed: {}", strerror(errno));
-
-        return true;
-    }
-
-    void unlock() {
-        struct flock fl{};
-        fl.l_type   = F_UNLCK;
-        fl.l_whence = SEEK_SET;
-        fl.l_pid    = -1;
-
-        if (fcntl(pFd, F_SETLKW, &fl) == -1)
-            Debug::log(NONE, "✖ failed to unlock the instance {}: {}", pLockName, strerror(errno));
-    }
-
-    bool killOld(pid_t oldPid) {
-        if (oldPid <= 0)
-            return false;
-
-        if (kill(oldPid, SIGTERM) == -1) {
-            Debug::log(NONE, "✖ failed to to kill the other running instance: {}", strerror(errno));
-            return false;
-        }
-
-        waitpid(oldPid, nullptr, 0);
-
-        return true;
+        return {pid, display};
     }
 };
