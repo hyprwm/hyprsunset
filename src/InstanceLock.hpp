@@ -1,10 +1,14 @@
 #pragma once
 
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <fcntl.h>
-#include <wait.h>
 #include <fstream>
+#include <pwd.h>
+#include <sys/types.h>
+#include <thread>
+#include <wait.h>
 
 #include "helpers/Log.hpp"
 
@@ -26,6 +30,7 @@ class InstanceLock {
             return; // it is not the only instance
         }
 
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         isOnlyInstance = true;
     }
 
@@ -50,13 +55,27 @@ class InstanceLock {
         return -1;
     }
 
-    std::string getLockName() {
-        std::string lockname = getenv("XDG_RUNTIME_DIR");
-        if (lockname.back() != '/')
-            lockname += '/';
-        lockname += "hypr/.hyprsunsetlockfile";
+    static std::string getLockName() {
+        return getRuntimeDir() + "/.hyprsunsetlockfile";
+    }
 
-        return lockname;
+    // stolen from Hyprland/hyprctl/main.cpp
+    static unsigned getUID() {
+        const auto UID   = getuid();
+        const auto PWUID = getpwuid(UID);
+        return PWUID ? PWUID->pw_uid : UID;
+    }
+
+    // stolen from Hyprland/hyprctl/main.cpp
+    static std::string getRuntimeDir() {
+        const auto XDG = getenv("XDG_RUNTIME_DIR");
+
+        if (!XDG) {
+            const auto USERID = std::to_string(getUID());
+            return "/run/user/" + USERID + "/hypr";
+        }
+
+        return std::string{XDG} + "/hypr";
     }
 
     bool tryLock() {
