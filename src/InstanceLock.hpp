@@ -5,66 +5,62 @@
 #include <chrono>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
-#include <pwd.h>
 #include <ranges>
-#include <sys/types.h>
 #include <thread>
 #include <wait.h>
 
 #include "helpers/Log.hpp"
+#include "helpers/GetRuntimeDir.hpp"
 
 #include "IPCSemaphore.hpp"
 
-class InstanceLock {
+class CInstanceLock {
   public:
-    InstanceLock() {
-        static constexpr const char* SEM_NAME = "/hyprsunsetlocksemaphore";
+    CInstanceLock() : pLockFolder(getHyprsunsetFolder()) {
+        static constexpr const char* SEM_NAME = "/hyprsunsetsemaphore";
         IPCSemaphore                 fileSem{SEM_NAME};
-        auto                         fileLock = fileSem.GetLock();
-
-        createLockFileIfNotExist();
+        auto                         fileLock = fileSem.getLock();
 
         if (!lock()) {
-            Debug::log(NONE, "✖ Failed to set instance lock {}", pLockName);
+            Debug::log(NONE, "✖ Failed to set instance lock {}", pLockFolder.c_str());
             return;
         }
 
         isOnlyInstance = true;
     }
 
-    ~InstanceLock() {
-        auto ids = readLockFile();
-        unlock(ids);
+    ~CInstanceLock() {
+        unlock();
     }
 
     bool isOnlyInstance = false;
 
   private:
-    struct InstanceIdentifier {
+    struct SInstanceIdentifier {
         pid_t       pid = -1;
         std::string waylandEnv;
-        InstanceIdentifier(pid_t pid, std::string&& display) : pid(pid), waylandEnv(std::move(display)) {}
+
+        SInstanceIdentifier() = default;
+        SInstanceIdentifier(pid_t pid, std::string&& display) : pid(pid), waylandEnv(std::move(display)) {}
 
         std::string toString() const {
             return std::format("{}\n{}\n", pid, waylandEnv);
         }
 
-        bool operator==(const InstanceIdentifier& other) const {
+        bool operator==(const SInstanceIdentifier& other) const {
             return pid == other.pid && waylandEnv == other.waylandEnv;
         }
     };
 
-    using IdsVec         = std::vector<InstanceIdentifier>;
-    using IdsVecIterator = IdsVec::iterator;
-
   private:
-    std::string        pLockName{getLockFileName()};
-    InstanceIdentifier pIdentifer{getInstanceIdentifier()};
+    std::filesystem::path pLockFolder;
+    SInstanceIdentifier   pIdentifer{getInstanceIdentifier()};
 
   private:
     bool lock() {
-        auto ids = readLockFile();
+        auto ids = readLocks();
 
         auto sameEnvIt = findSameEnv(ids);
 
@@ -73,46 +69,43 @@ class InstanceLock {
 
             if (!killOld(oldPid))
                 return false;
-
-            ids = readLockFile();
         }
 
-        ids.emplace_back(pIdentifer);
+        writeLock();
 
-        commitLockFile(ids);
         return true;
     }
 
-    void unlock(IdsVec& ids) {
-        auto thisInstanceIt = findUs(ids);
-        ids.erase(thisInstanceIt);
-
-        commitLockFile(ids);
+    void unlock() {
+        std::filesystem::remove(getLockFile(pIdentifer.pid));
     }
 
-    IdsVec readLockFile() {
-        auto   file = getReadFile();
+    std::vector<SInstanceIdentifier> readLocks() {
+        std::vector<SInstanceIdentifier> ids;
 
-        IdsVec ids;
-        while (file.peek() != -1) {
-            pid_t       pid = 0;
-            std::string display;
-
-            file >> pid >> display;
-            file.get();
-
-            ids.emplace_back(pid, std::move(display));
+        for (const auto& file : std::filesystem::recursive_directory_iterator(pLockFolder)) {
+            ids.emplace_back(readFile(file).value_or(SInstanceIdentifier{}));
         }
 
         return ids;
     }
 
-    void commitLockFile(std::span<const InstanceIdentifier> ids) {
+    void writeLock() {
+        std::ofstream f{getLockFile(pIdentifer.pid), std::fstream::out | std::fstream::trunc};
+        f << pIdentifer.toString();
+    }
 
-        auto file = getWriteFile();
-        for (const auto& id : ids) {
-            file << id.toString();
-        }
+    std::optional<SInstanceIdentifier> readFile(const std::filesystem::directory_entry& file) {
+        if (!file.is_regular_file())
+            return std::nullopt;
+
+        pid_t         pid = 0;
+        std::string   waylandEnv;
+
+        std::ifstream f{file.path(), std::fstream::in};
+        f >> pid >> waylandEnv;
+
+        return SInstanceIdentifier{pid, std::move(waylandEnv)};
     }
 
     static bool killOld(pid_t oldPid) {
@@ -135,51 +128,20 @@ class InstanceLock {
         return kill(pid, 0) == 0 || errno != ESRCH;
     }
 
-    IdsVecIterator findSameEnv(IdsVec& ids) {
-        return std::ranges::find_if(std::views::all(ids), [this](const InstanceIdentifier& id) { return id.waylandEnv == pIdentifer.waylandEnv; });
+    std::vector<SInstanceIdentifier>::iterator findSameEnv(std::vector<SInstanceIdentifier>& ids) {
+        return std::ranges::find_if(std::views::all(ids), [this](const SInstanceIdentifier& id) { return id.waylandEnv == pIdentifer.waylandEnv; });
     }
 
-    IdsVecIterator findUs(IdsVec& ids) {
-        return std::ranges::find_if(std::views::all(ids), [this](const InstanceIdentifier& id) { return id == pIdentifer; });
+    std::vector<SInstanceIdentifier>::iterator findUs(std::vector<SInstanceIdentifier>& ids) {
+        return std::ranges::find_if(std::views::all(ids), [this](const SInstanceIdentifier& id) { return id == pIdentifer; });
     }
 
-    void createLockFileIfNotExist() const {
-        std::ofstream give_me_a_name{pLockName, std::fstream::out | std::fstream::app};
-    }
-
-    std::ifstream getReadFile() const {
-        return std::ifstream{pLockName, std::fstream::in};
-    }
-
-    std::ofstream getWriteFile() const {
-        return std::ofstream{pLockName, std::fstream::out | std::fstream::trunc};
-    }
-
-    static std::string getLockFileName() {
-        return getRuntimeDir() + "/hyprsunset.lock";
-    }
-
-    // taken from Hyprland/hyprctl/main.cpp
-    static unsigned getUID() {
-        const auto UID   = getuid();
-        const auto PWUID = getpwuid(UID);
-        return PWUID ? PWUID->pw_uid : UID;
-    }
-
-    // taken  from Hyprland/hyprctl/main.cpp
-    static std::string getRuntimeDir() {
-        const auto XDG = getenv("XDG_RUNTIME_DIR");
-
-        if (!XDG) {
-            const auto USERID = std::to_string(getUID());
-            return "/run/user/" + USERID + "/hypr";
-        }
-
-        return std::string{XDG} + "/hypr";
+    std::filesystem::path getLockFile(pid_t pid) {
+        return pLockFolder.string() + '/' + std::to_string(pid);
     }
 
     // returns pid and WAYLAND_DISPLAY
-    static InstanceIdentifier getInstanceIdentifier() {
+    static SInstanceIdentifier getInstanceIdentifier() {
         int pid = getpid();
         if (pid == -1) {
             Debug::log(NONE, "✖ Failed getpid: {}", strerror(errno));

@@ -38,7 +38,7 @@ class IPCSemaphore {
         sem_close(pSemaphore);
     }
 
-    Lock GetLock() noexcept {
+    Lock getLock() noexcept {
         return Lock{pSemaphore};
     }
 
