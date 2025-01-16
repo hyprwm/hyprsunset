@@ -53,7 +53,7 @@ struct {
     std::vector<SP<SOutput>>          outputs;
     bool                              initialized = false;
     Mat3x3                            ctm;
-    CInstanceLock                      instLock;
+    CInstanceLock                     instLock;
 } state;
 
 void sigHandler(int sig) {
