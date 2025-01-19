@@ -1,6 +1,9 @@
+#pragma once
+
 #include <format>
 #include <fstream>
 #include <string>
+#include <iostream>
 
 enum LogLevel {
     NONE = -1,
