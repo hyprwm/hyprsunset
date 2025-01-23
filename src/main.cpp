@@ -1,5 +1,7 @@
 #include <iostream>
+#include <sstream>
 #include <cmath>
+#include <ctime>
 #include <algorithm>
 #include <sys/signal.h>
 #include <wayland-client.h>
@@ -83,6 +85,26 @@ static void printHelp() {
     Debug::log(NONE, "╹");
 }
 
+float parseTimeToFloat(const std::string& timeStr) {
+    int hours, minutes;
+    char separator;
+
+    std::istringstream timeStream(timeStr);
+    if (!(timeStream >> hours >> separator >> minutes) || separator != ':' || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+        Debug::log(NONE, "Invalid time format. Expected HH:MM with valid hour and minute values.");
+    }
+    return hours + (minutes / 60.0f);
+}
+
+bool shouldApplyColorTemperature(float dawn, float sunset) {
+    time_t now = time(nullptr);
+    struct std::tm* localTime = localtime(&now);
+    float hour = localTime->tm_hour;
+    float min = localTime->tm_min;
+    return ((hour + min / 60) <= dawn || (hour + min / 60) >=sunset);
+}
+
+
 int main(int argc, char** argv, char** envp) {
     Debug::log(NONE, "┏ hyprsunset v{} ━━╸\n┃", HYPRSUNSET_VERSION);
 
@@ -93,6 +115,9 @@ int main(int argc, char** argv, char** envp) {
 
     unsigned long long KELVIN    = 6000; // default
     bool               kelvinSet = false, identity = false;
+    float dawn = 7.5f;
+    float sunset = 19.0f;
+
 
     for (int i = 1; i < argc; ++i) {
         if (argv[i] == std::string{"-t"} || argv[i] == std::string{"--temperature"}) {
@@ -112,6 +137,21 @@ int main(int argc, char** argv, char** envp) {
             ++i;
         } else if (argv[i] == std::string{"-i"} || argv[i] == std::string{"--identity"}) {
             identity = true;
+        } else if (argv[i] == std::string{"-ti"} || argv[i] == std::string{"--time"}) {
+            if (i + 2 >= argc) {
+                Debug::log(NONE, "✖ No time provided for {}", argv[i]);
+                return 1;
+            }
+            try {
+                dawn = parseTimeToFloat(argv[i + 1]);
+                sunset = parseTimeToFloat(argv[i + 2]);
+            } catch (std::exception& e) {
+                Debug::log(NONE, "✖ Time is not valid", argv[i + 1], argv[i + 2]);
+                return 1;
+            }
+            if (shouldApplyColorTemperature(dawn, sunset))
+                Debug::log(NONE, "┣ Setting the time to dawn-> {} and sunset-> {}\n┃", argv[i + 1], argv[i + 2]);
+            i +=2;
         } else if (argv[i] == std::string{"-h"} || argv[i] == std::string{"--help"}) {
             printHelp();
             return 0;
@@ -127,6 +167,8 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
 
+    if (!shouldApplyColorTemperature(dawn, sunset))
+        identity = true;
     if (!identity)
         Debug::log(NONE, "┣ Setting the temperature to {}K{}\n┃", KELVIN, kelvinSet ? "" : " (default)");
     else
