@@ -19,7 +19,7 @@ using namespace Hyprutils::Memory;
 #define WP CWeakPointer
 
 // kindly borrowed from https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html
-static Mat3x3 matrixForKelvin(unsigned long long temp) {
+static Mat3x3 matrixForKelvin(unsigned long long temp, float gamma) {
     float r = 1.F, g = 1.F, b = 1.F;
 
     temp /= 100;
@@ -36,6 +36,10 @@ static Mat3x3 matrixForKelvin(unsigned long long temp) {
         g = std::clamp(288.1221695283 * (std::pow(temp - 60, -0.0755148492)), 0.0, 255.0);
         b = 255;
     }
+
+    r *= gamma;
+    g *= gamma;
+    b *= gamma;
 
     return std::array<float, 9>{r / 255.F, 0, 0, 0, g / 255.F, 0, 0, 0, b / 255.F};
 }
@@ -91,6 +95,7 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
 
+    float              GAMMA     = 1.0f; // default
     unsigned long long KELVIN    = 6000; // default
     bool               kelvinSet = false, identity = false;
 
@@ -106,6 +111,20 @@ int main(int argc, char** argv, char** envp) {
                 kelvinSet = true;
             } catch (std::exception& e) {
                 Debug::log(NONE, "✖ Temperature {} is not valid", argv[i + 1]);
+                return 1;
+            }
+
+            ++i;
+        } else if (argv[i] == std::string{"-g"} || argv[i] == std::string{"--gamma"}) {
+            if (i + 1 >= argc) {
+                Debug::log(NONE, "✖ No gamma provided for {}", argv[i]);
+                return 1;
+            }
+
+            try {
+                GAMMA = std::stof(argv[i + 1]) / 100;
+            } catch (std::exception& e) {
+                Debug::log(NONE, "✖ Gamma {} is not valid", argv[i + 1]);
                 return 1;
             }
 
@@ -127,13 +146,18 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
 
+    if (GAMMA < 0 || GAMMA > 1) {
+        Debug::log(NONE, "✖ Gamma invalid: {}%. The gamma has to be between 0% and 100%", GAMMA*100);
+        return 1;
+    }
+
     if (!identity)
         Debug::log(NONE, "┣ Setting the temperature to {}K{}\n┃", KELVIN, kelvinSet ? "" : " (default)");
     else
         Debug::log(NONE, "┣ Resetting the matrix (--identity passed)\n┃", KELVIN, kelvinSet ? "" : " (default)");
 
     // calculate the matrix
-    state.ctm = identity ? Mat3x3::identity() : matrixForKelvin(KELVIN);
+    state.ctm = identity ? Mat3x3::identity() : matrixForKelvin(KELVIN, GAMMA);
 
     Debug::log(NONE, "┣ Calculated the CTM to be {}\n┃", state.ctm.toString());
 
