@@ -110,7 +110,7 @@ int main(int argc, char** argv, char** envp) {
                 Debug::log(NONE, "✖ Temperature {} is not valid", argv[i + 1]);
                 return 1;
             }
-            
+
             ++i;
         } else if (argv[i] == std::string{"-g"} || argv[i] == std::string{"--gamma"}) {
             if (i + 1 >= argc) {
@@ -144,7 +144,7 @@ int main(int argc, char** argv, char** envp) {
     }
 
     if (GAMMA < 0 || GAMMA > 2) {
-        Debug::log(NONE, "✖ Gamma invalid: {}%. The gamma has to be between 0% and 200%", GAMMA*100);
+        Debug::log(NONE, "✖ Gamma invalid: {}%. The gamma has to be between 0% and 200%", GAMMA * 100);
         return 1;
     }
 
