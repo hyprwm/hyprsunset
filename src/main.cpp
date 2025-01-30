@@ -155,7 +155,7 @@ int main(int argc, char** argv, char** envp) {
 
     // calculate the matrix
     state.ctm = identity ? Mat3x3::identity() : matrixForKelvin(KELVIN);
-    state.ctm = state.ctm.multiply(std::array<float, 9>{GAMMA, 0, 0, 0, GAMMA, 0, 0, 0, GAMMA});
+    state.ctm.multiply(std::array<float, 9>{GAMMA, 0, 0, 0, GAMMA, 0, 0, 0, GAMMA});
 
     Debug::log(NONE, "┣ Calculated the CTM to be {}\n┃", state.ctm.toString());
 
