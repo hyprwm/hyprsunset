@@ -77,6 +77,7 @@ static void commitCTMs() {
 }
 
 static void printHelp() {
+    Debug::log(NONE, "┣ --gamma             -g  →  Set the display gamma (default 100%)");
     Debug::log(NONE, "┣ --temperature       -t  →  Set the temperature in K (default 6000)");
     Debug::log(NONE, "┣ --identity          -i  →  Use the identity matrix (no color change)");
     Debug::log(NONE, "┣ --help              -h  →  Print this info");
@@ -91,6 +92,7 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
 
+    float              GAMMA     = 1.0f; // default
     unsigned long long KELVIN    = 6000; // default
     bool               kelvinSet = false, identity = false;
 
@@ -106,6 +108,20 @@ int main(int argc, char** argv, char** envp) {
                 kelvinSet = true;
             } catch (std::exception& e) {
                 Debug::log(NONE, "✖ Temperature {} is not valid", argv[i + 1]);
+                return 1;
+            }
+
+            ++i;
+        } else if (argv[i] == std::string{"-g"} || argv[i] == std::string{"--gamma"}) {
+            if (i + 1 >= argc) {
+                Debug::log(NONE, "✖ No gamma provided for {}", argv[i]);
+                return 1;
+            }
+
+            try {
+                GAMMA = std::stof(argv[i + 1]) / 100;
+            } catch (std::exception& e) {
+                Debug::log(NONE, "✖ Gamma {} is not valid", argv[i + 1]);
                 return 1;
             }
 
@@ -127,6 +143,11 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
 
+    if (GAMMA < 0 || GAMMA > 2) {
+        Debug::log(NONE, "✖ Gamma invalid: {}%. The gamma has to be between 0% and 200%", GAMMA * 100);
+        return 1;
+    }
+
     if (!identity)
         Debug::log(NONE, "┣ Setting the temperature to {}K{}\n┃", KELVIN, kelvinSet ? "" : " (default)");
     else
@@ -134,6 +155,7 @@ int main(int argc, char** argv, char** envp) {
 
     // calculate the matrix
     state.ctm = identity ? Mat3x3::identity() : matrixForKelvin(KELVIN);
+    state.ctm.multiply(std::array<float, 9>{GAMMA, 0, 0, 0, GAMMA, 0, 0, 0, GAMMA});
 
     Debug::log(NONE, "┣ Calculated the CTM to be {}\n┃", state.ctm.toString());
 
