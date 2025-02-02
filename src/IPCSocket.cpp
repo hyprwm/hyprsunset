@@ -110,7 +110,7 @@ bool CIPCSocket::mainThreadParseRequest() {
     // config commands
     if (copy.find("gamma") == 0) {
         std::string args = copy.substr(copy.find_first_of(' ') + 1);
-        float gamma;
+        float       gamma;
         if (args[0] == '+' || args[0] == '-') {
             gamma = g_pHyprsunset->GAMMA * 100;
             if (args[0] == '-') {
@@ -118,8 +118,10 @@ bool CIPCSocket::mainThreadParseRequest() {
             } else {
                 gamma += std::stof(args.substr(1));
             }
-            if (gamma < 0) gamma = 0;
-            if (gamma > 100) gamma = 100;
+            if (gamma < 0)
+                gamma = 0;
+            if (gamma > 100)
+                gamma = 100;
         } else {
             gamma = std::stof(args);
         }
@@ -134,7 +136,7 @@ bool CIPCSocket::mainThreadParseRequest() {
     }
 
     if (copy.find("temperature") == 0) {
-        std::string args = copy.substr(copy.find_first_of(' ') + 1);
+        std::string        args = copy.substr(copy.find_first_of(' ') + 1);
         unsigned long long kelvin;
         if (args[0] == '+' || args[0] == '-') {
             kelvin = g_pHyprsunset->KELVIN;
@@ -143,8 +145,10 @@ bool CIPCSocket::mainThreadParseRequest() {
             } else {
                 kelvin += std::stoull(args.substr(1));
             }
-            if (kelvin < 1000) kelvin = 1000;
-            if (kelvin > 20000) kelvin = 20000;
+            if (kelvin < 1000)
+                kelvin = 1000;
+            if (kelvin > 20000)
+                kelvin = 20000;
         } else {
             kelvin = std::stoull(args);
         }
@@ -154,7 +158,7 @@ bool CIPCSocket::mainThreadParseRequest() {
             return false;
         }
 
-        g_pHyprsunset->KELVIN = kelvin;
+        g_pHyprsunset->KELVIN   = kelvin;
         g_pHyprsunset->identity = false;
         return true;
     }

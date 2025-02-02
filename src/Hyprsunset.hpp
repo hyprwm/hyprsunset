@@ -45,10 +45,10 @@ class CHyprsunset {
     SState             state;
     std::mutex         m_mtTickMutex;
 
-    int calculateMatrix();
-    int applySettings();
-    int init();
-    void tick();
+    int                calculateMatrix();
+    int                applySettings();
+    int                init();
+    void               tick();
 
   private:
     static void commitCTMs();

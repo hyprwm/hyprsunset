@@ -34,8 +34,8 @@ void sigHandler(int sig) {
 void SOutput::applyCTM(struct SState* state) {
     auto arr = state->ctm.getMatrix();
     state->pCTMMgr->sendSetCtmForOutput(output->resource(), wl_fixed_from_double(arr[0]), wl_fixed_from_double(arr[1]), wl_fixed_from_double(arr[2]), wl_fixed_from_double(arr[3]),
-                                       wl_fixed_from_double(arr[4]), wl_fixed_from_double(arr[5]), wl_fixed_from_double(arr[6]), wl_fixed_from_double(arr[7]),
-                                       wl_fixed_from_double(arr[8]));
+                                        wl_fixed_from_double(arr[4]), wl_fixed_from_double(arr[5]), wl_fixed_from_double(arr[6]), wl_fixed_from_double(arr[7]),
+                                        wl_fixed_from_double(arr[8]));
 }
 
 void CHyprsunset::commitCTMs() {

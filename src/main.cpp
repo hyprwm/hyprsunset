@@ -61,8 +61,10 @@ int main(int argc, char** argv, char** envp) {
         }
     }
 
-    if (!g_pHyprsunset->calculateMatrix()) return 1;
-    if (!g_pHyprsunset->init()) return 1;
+    if (!g_pHyprsunset->calculateMatrix())
+        return 1;
+    if (!g_pHyprsunset->init())
+        return 1;
 
     return 0;
 }
