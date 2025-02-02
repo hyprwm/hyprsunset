@@ -11,6 +11,9 @@
 
 #include "InstanceLock.hpp"
 
+#include "IPCSocket.hpp"
+#include <mutex>
+
 #include <hyprutils/math/Mat3x3.hpp>
 #include <hyprutils/memory/WeakPtr.hpp>
 using namespace Hyprutils::Math;
@@ -40,6 +43,7 @@ class CHyprsunset {
     unsigned long long KELVIN    = 6000; // default
     bool               kelvinSet = false, identity = false;
     SState             state;
+    std::mutex         m_mtTickMutex;
 
     int calculateMatrix();
     int applySettings();

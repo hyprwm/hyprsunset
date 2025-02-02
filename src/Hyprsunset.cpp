@@ -124,9 +124,28 @@ int CHyprsunset::init() {
 
     state.initialized = true;
 
+    g_pIPCSocket = std::make_unique<CIPCSocket>();
+    g_pIPCSocket->initialize();
+
     while (wl_display_dispatch(state.wlDisplay) != -1) {
-        ;
+        std::lock_guard<std::mutex> lg(m_mtTickMutex);
+        tick();
     }
 
     return 1;
+}
+
+void CHyprsunset::tick() {
+    if (g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest()) {
+        // Reload
+        calculateMatrix();
+
+        for (auto& o : state.outputs) {
+            o->applyCTM(&state);
+        }
+
+        commitCTMs();
+
+        wl_display_flush(state.wlDisplay);
+    }
 }
