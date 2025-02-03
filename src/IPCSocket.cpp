@@ -111,7 +111,7 @@ bool CIPCSocket::mainThreadParseRequest() {
     if (copy.find("gamma") == 0) {
         int space_separator = copy.find_first_of(' ');
         if (space_separator == -1) {
-            m_szReply = "No gamma value provided.";
+            m_szReply = std::to_string(g_pHyprsunset->GAMMA * 100);
             return false;
         }
 
@@ -145,7 +145,7 @@ bool CIPCSocket::mainThreadParseRequest() {
     if (copy.find("temperature") == 0) {
         int space_separator = copy.find_first_of(' ');
         if (space_separator == -1) {
-            m_szReply = "No temperature value provided.";
+            m_szReply = std::to_string(g_pHyprsunset->KELVIN);
             return false;
         }
 
