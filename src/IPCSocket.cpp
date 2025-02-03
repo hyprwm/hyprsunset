@@ -109,19 +109,26 @@ bool CIPCSocket::mainThreadParseRequest() {
 
     // config commands
     if (copy.find("gamma") == 0) {
-        std::string args = copy.substr(copy.find_first_of(' ') + 1);
-        float       gamma;
+        int space_separator = copy.find_first_of(' ');
+        if (space_separator == -1) {
+            m_szReply = "No gamma value provided.";
+            return false;
+        }
+
+        std::string args  = copy.substr(space_separator + 1);
+        float       gamma = g_pHyprsunset->GAMMA * 100;
         if (args[0] == '+' || args[0] == '-') {
-            gamma = g_pHyprsunset->GAMMA * 100;
-            if (args[0] == '-') {
-                gamma -= std::stof(args.substr(1));
-            } else {
-                gamma += std::stof(args.substr(1));
+            try {
+                if (args[0] == '-')
+                    gamma -= std::stof(args.substr(1));
+                else
+                    gamma += std::stof(args.substr(1));
+            } catch (std::exception& e) {
+                m_szReply = "Invalid gamma value (should be in range 0-200%)";
+                return false;
             }
-            if (gamma < 0)
-                gamma = 0;
-            if (gamma > 100)
-                gamma = 100;
+
+            gamma = std::clamp(gamma, 0.0f, 100.0f);
         } else {
             gamma = std::stof(args);
         }
@@ -136,19 +143,26 @@ bool CIPCSocket::mainThreadParseRequest() {
     }
 
     if (copy.find("temperature") == 0) {
-        std::string        args = copy.substr(copy.find_first_of(' ') + 1);
-        unsigned long long kelvin;
+        int space_separator = copy.find_first_of(' ');
+        if (space_separator == -1) {
+            m_szReply = "No temperature value provided.";
+            return false;
+        }
+
+        std::string        args   = copy.substr(space_separator + 1);
+        unsigned long long kelvin = g_pHyprsunset->KELVIN;
         if (args[0] == '+' || args[0] == '-') {
-            kelvin = g_pHyprsunset->KELVIN;
-            if (args[0] == '-') {
-                kelvin -= std::stoull(args.substr(1));
-            } else {
-                kelvin += std::stoull(args.substr(1));
+            try {
+                if (args[0] == '-')
+                    kelvin -= std::stoull(args.substr(1));
+                else
+                    kelvin += std::stoull(args.substr(1));
+            } catch (std::exception& e) {
+                m_szReply = "Invalid temperature (should be in range 1000-20000)";
+                return false;
             }
-            if (kelvin < 1000)
-                kelvin = 1000;
-            if (kelvin > 20000)
-                kelvin = 20000;
+
+            kelvin = std::clamp(kelvin, 1000ull, 20000ull);
         } else {
             kelvin = std::stoull(args);
         }
