@@ -115,8 +115,9 @@ bool CIPCSocket::mainThreadParseRequest() {
             return false;
         }
 
-        std::string args  = copy.substr(space_separator + 1);
-        float       gamma = g_pHyprsunset->GAMMA * 100;
+        std::string args      = copy.substr(space_separator + 1);
+        float       gamma     = g_pHyprsunset->GAMMA * 100;
+        float       max_gamma = g_pHyprsunset->MAX_GAMMA * 100;
         if (args[0] == '+' || args[0] == '-') {
             try {
                 if (args[0] == '-')
@@ -124,17 +125,17 @@ bool CIPCSocket::mainThreadParseRequest() {
                 else
                     gamma += std::stof(args.substr(1));
             } catch (std::exception& e) {
-                m_szReply = "Invalid gamma value (should be in range 0-200%)";
+                m_szReply = "Invalid gamma value (should be in range 0-" + std::to_string(max_gamma) + "%)";
                 return false;
             }
 
-            gamma = std::clamp(gamma, 0.0f, 100.0f);
+            gamma = std::clamp(gamma, 0.0f, max_gamma);
         } else {
             gamma = std::stof(args);
         }
 
-        if (gamma < 0 || gamma > 200) {
-            m_szReply = "Invalid gamma value (should be in range 0-200%)";
+        if (gamma < 0 || gamma > max_gamma) {
+            m_szReply = "Invalid gamma value (should be in range 0-" + std::to_string(max_gamma) + "%)";
             return false;
         }
 

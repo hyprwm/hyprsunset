@@ -48,8 +48,8 @@ int CHyprsunset::calculateMatrix() {
         return 0;
     }
 
-    if (GAMMA < 0 || GAMMA > 2) {
-        Debug::log(NONE, "✖ Gamma invalid: {}%. The gamma has to be between 0% and 200%", GAMMA * 100);
+    if (GAMMA < 0 || GAMMA > MAX_GAMMA) {
+        Debug::log(NONE, "✖ Gamma invalid: {}%. The gamma has to be between 0% and {}%", GAMMA * 100, MAX_GAMMA * 100);
         return 0;
     }
 

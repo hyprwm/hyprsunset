@@ -3,6 +3,7 @@
 
 static void printHelp() {
     Debug::log(NONE, "┣ --gamma             -g  →  Set the display gamma (default 100%)");
+    Debug::log(NONE, "┣ --gamma_max             →  Set the maximum display gamma (default 100%, maximum 200%)");
     Debug::log(NONE, "┣ --temperature       -t  →  Set the temperature in K (default 6000)");
     Debug::log(NONE, "┣ --identity          -i  →  Use the identity matrix (no color change)");
     Debug::log(NONE, "┣ --help              -h  →  Print this info");
@@ -45,6 +46,20 @@ int main(int argc, char** argv, char** envp) {
                 g_pHyprsunset->GAMMA = std::stof(argv[i + 1]) / 100;
             } catch (std::exception& e) {
                 Debug::log(NONE, "✖ Gamma {} is not valid", argv[i + 1]);
+                return 1;
+            }
+
+            ++i;
+        } else if (argv[i] == std::string{"--gamma_max"}) {
+            if (i + 1 >= argc) {
+                Debug::log(NONE, "✖ No gamma provided for {}", argv[i]);
+                return 1;
+            }
+
+            try {
+                g_pHyprsunset->MAX_GAMMA = std::stof(argv[i + 1]) / 100;
+            } catch (std::exception& e) {
+                Debug::log(NONE, "✖ Maximum gamma {} is not valid", argv[i + 1]);
                 return 1;
             }
 

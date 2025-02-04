@@ -39,6 +39,7 @@ struct SState {
 
 class CHyprsunset {
   public:
+    float              MAX_GAMMA = 1.0f; // default
     float              GAMMA     = 1.0f; // default
     unsigned long long KELVIN    = 6000; // default
     bool               kelvinSet = false, identity = false;
