@@ -9,8 +9,6 @@
 
 #include "helpers/Log.hpp"
 
-#include "InstanceLock.hpp"
-
 #include <hyprutils/math/Mat3x3.hpp>
 #include <hyprutils/memory/WeakPtr.hpp>
 using namespace Hyprutils::Math;
@@ -53,7 +51,6 @@ struct {
     std::vector<SP<SOutput>>          outputs;
     bool                              initialized = false;
     Mat3x3                            ctm;
-    CInstanceLock                     instLock;
 } state;
 
 void sigHandler(int sig) {
@@ -86,11 +83,6 @@ static void printHelp() {
 
 int main(int argc, char** argv, char** envp) {
     Debug::log(NONE, "┏ hyprsunset v{} ━━╸\n┃", HYPRSUNSET_VERSION);
-
-    if (!state.instLock.isOnlyInstance) {
-        Debug::log(NONE, "✖ Another instance of hyprsunset is running");
-        return 1;
-    }
 
     float              GAMMA     = 1.0f; // default
     unsigned long long KELVIN    = 6000; // default
@@ -170,7 +162,6 @@ int main(int argc, char** argv, char** envp) {
         return 1;
     }
 
-    signal(SIGINT, sigHandler);
     signal(SIGTERM, sigHandler);
 
     state.pRegistry = makeShared<CCWlRegistry>((wl_proxy*)wl_display_get_registry(state.wlDisplay));
@@ -178,9 +169,18 @@ int main(int argc, char** argv, char** envp) {
         const std::string IFACE = interface;
 
         if (IFACE == hyprland_ctm_control_manager_v1_interface.name) {
-            Debug::log(NONE, "┣ Found hyprland-ctm-control-v1 supported with version {}, binding to v1", version);
+            auto targetVersion = std::min(version, 2u);
+
+            Debug::log(NONE, "┣ Found hyprland-ctm-control-v1 supported with version {}, binding to v{}", version, targetVersion);
             state.pCTMMgr = makeShared<CCHyprlandCtmControlManagerV1>(
-                (wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &hyprland_ctm_control_manager_v1_interface, 1));
+                (wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &hyprland_ctm_control_manager_v1_interface, targetVersion));
+
+            if (targetVersion >= 2) {
+                state.pCTMMgr->setBlocked([](CCHyprlandCtmControlManagerV1*) {
+                    Debug::log(NONE, "✖ A CTM manager is already running on the current compositor.");
+                    exit(1);
+                });
+            }
         } else if (IFACE == wl_output_interface.name) {
 
             if (std::find_if(state.outputs.begin(), state.outputs.end(), [name](const auto& el) { return el->id == name; }) != state.outputs.end())
