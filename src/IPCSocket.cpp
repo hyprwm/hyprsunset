@@ -109,15 +109,15 @@ bool CIPCSocket::mainThreadParseRequest() {
 
     // config commands
     if (copy.find("gamma") == 0) {
-        int space_separator = copy.find_first_of(' ');
-        if (space_separator == -1) {
+        int spaceSeparator = copy.find_first_of(' ');
+        if (spaceSeparator == -1) {
             m_szReply = std::to_string(g_pHyprsunset->GAMMA * 100);
             return false;
         }
 
-        std::string args      = copy.substr(space_separator + 1);
-        float       gamma     = g_pHyprsunset->GAMMA * 100;
-        float       max_gamma = g_pHyprsunset->MAX_GAMMA * 100;
+        std::string args     = copy.substr(spaceSeparator + 1);
+        float       gamma    = g_pHyprsunset->GAMMA * 100;
+        float       maxGamma = g_pHyprsunset->MAX_GAMMA * 100;
         if (args[0] == '+' || args[0] == '-') {
             try {
                 if (args[0] == '-')
@@ -125,17 +125,16 @@ bool CIPCSocket::mainThreadParseRequest() {
                 else
                     gamma += std::stof(args.substr(1));
             } catch (std::exception& e) {
-                m_szReply = "Invalid gamma value (should be in range 0-" + std::to_string(max_gamma) + "%)";
+                m_szReply = "Invalid gamma value (should be in range 0-" + std::to_string(maxGamma) + "%)";
                 return false;
             }
 
-            gamma = std::clamp(gamma, 0.0f, max_gamma);
-        } else {
+            gamma = std::clamp(gamma, 0.0f, maxGamma);
+        } else
             gamma = std::stof(args);
-        }
 
-        if (gamma < 0 || gamma > max_gamma) {
-            m_szReply = "Invalid gamma value (should be in range 0-" + std::to_string(max_gamma) + "%)";
+        if (gamma < 0 || gamma > maxGamma) {
+            m_szReply = "Invalid gamma value (should be in range 0-" + std::to_string(maxGamma) + "%)";
             return false;
         }
 
@@ -144,13 +143,13 @@ bool CIPCSocket::mainThreadParseRequest() {
     }
 
     if (copy.find("temperature") == 0) {
-        int space_separator = copy.find_first_of(' ');
-        if (space_separator == -1) {
+        int spaceSeparator = copy.find_first_of(' ');
+        if (spaceSeparator == -1) {
             m_szReply = std::to_string(g_pHyprsunset->KELVIN);
             return false;
         }
 
-        std::string        args   = copy.substr(space_separator + 1);
+        std::string        args   = copy.substr(spaceSeparator + 1);
         unsigned long long kelvin = g_pHyprsunset->KELVIN;
         if (args[0] == '+' || args[0] == '-') {
             try {
@@ -164,9 +163,8 @@ bool CIPCSocket::mainThreadParseRequest() {
             }
 
             kelvin = std::clamp(kelvin, 1000ull, 20000ull);
-        } else {
+        } else
             kelvin = std::stoull(args);
-        }
 
         if (kelvin < 1000 || kelvin > 20000) {
             m_szReply = "Invalid temperature (should be in range 1000-20000)";

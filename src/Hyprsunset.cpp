@@ -22,7 +22,7 @@ static Mat3x3 matrixForKelvin(unsigned long long temp) {
     return std::array<float, 9>{r / 255.F, 0, 0, 0, g / 255.F, 0, 0, 0, b / 255.F};
 }
 
-void sigHandler(int sig) {
+static void sigHandler(int sig) {
     if (g_pHyprsunset->state.pCTMMgr) // reset the CTM state...
         g_pHyprsunset->state.pCTMMgr.reset();
 
