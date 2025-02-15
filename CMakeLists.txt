@@ -14,6 +14,8 @@ add_compile_definitions(HYPRSUNSET_VERSION="${VERSION}")
 
 message(STATUS "Configuring hyprsunset!")
 
+configure_file(systemd/hyprsunset.service.in systemd/hyprsunset.service @ONLY)
+
 # Get git info hash and branch
 execute_process(
   COMMAND git rev-parse --abbrev-ref HEAD
@@ -134,4 +136,7 @@ if(NOT DEFINED CMAKE_INSTALL_MANDIR)
     set(CMAKE_INSTALL_MANDIR "${CMAKE_INSTALL_PREFIX}/share/man")
 endif()
 
+include(GNUInstallDirs)
+
 install(TARGETS hyprsunset)
+install(FILES ${CMAKE_BINARY_DIR}/systemd/hyprsunset.service DESTINATION ${CMAKE_INSTALL_LIBDIR}/systemd/user)
