@@ -127,6 +127,8 @@ int CHyprsunset::init() {
     g_pIPCSocket = std::make_unique<CIPCSocket>();
     g_pIPCSocket->initialize();
 
+    g_pEventManager = std::make_unique<CEventManager>();
+
     while (wl_display_dispatch(state.wlDisplay) != -1) {
         std::lock_guard<std::mutex> lg(m_mtTickMutex);
         tick();
@@ -145,6 +147,13 @@ void CHyprsunset::tick() {
         }
 
         commitCTMs();
+
+        if (g_pEventManager) {
+            SHyprIPCEvent event;
+            event.event = "settings_changed";
+            event.data  = std::format("gamma:{} temperature:{} identity:{}", GAMMA * 100, KELVIN, identity ? "true" : "false");
+            g_pEventManager->postEvent(event);
+        }
 
         wl_display_flush(state.wlDisplay);
     }

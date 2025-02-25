@@ -18,8 +18,12 @@
 #include <hyprutils/memory/WeakPtr.hpp>
 using namespace Hyprutils::Math;
 using namespace Hyprutils::Memory;
+#ifndef SP
 #define SP CSharedPointer
+#endif
 #define WP CWeakPointer
+
+#include "EventManager.hpp"
 
 struct SOutput {
     SP<CCWlOutput> output;
