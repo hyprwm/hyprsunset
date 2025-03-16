@@ -9,8 +9,6 @@
 
 #include "helpers/Log.hpp"
 
-#include "InstanceLock.hpp"
-
 #include "IPCSocket.hpp"
 #include <mutex>
 
@@ -34,7 +32,6 @@ struct SState {
     std::vector<SP<SOutput>>          outputs;
     bool                              initialized = false;
     Mat3x3                            ctm;
-    CInstanceLock                     instLock;
 };
 
 class CHyprsunset {
