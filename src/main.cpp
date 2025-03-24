@@ -15,11 +15,6 @@ int main(int argc, char** argv, char** envp) {
 
     g_pHyprsunset = std::make_unique<CHyprsunset>();
 
-    if (!g_pHyprsunset->state.instLock.isOnlyInstance) {
-        Debug::log(NONE, "✖ Another instance of hyprsunset is running");
-        return 1;
-    }
-
     for (int i = 1; i < argc; ++i) {
         if (argv[i] == std::string{"-t"} || argv[i] == std::string{"--temperature"}) {
             if (i + 1 >= argc) {

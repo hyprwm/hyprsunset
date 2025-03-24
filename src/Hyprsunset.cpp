@@ -87,11 +87,19 @@ int CHyprsunset::init() {
         const std::string IFACE = interface;
 
         if (IFACE == hyprland_ctm_control_manager_v1_interface.name) {
-            Debug::log(NONE, "┣ Found hyprland-ctm-control-v1 supported with version {}, binding to v1", version);
-            state.pCTMMgr = makeShared<CCHyprlandCtmControlManagerV1>(
-                (wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &hyprland_ctm_control_manager_v1_interface, 1));
-        } else if (IFACE == wl_output_interface.name) {
+						auto targetVersion = std::min(version, 2u);
 
+            Debug::log(NONE, "┣ Found hyprland-ctm-control-v1 supported with version {}, binding to v{}", version, targetVersion);
+            state.pCTMMgr = makeShared<CCHyprlandCtmControlManagerV1>(
+                (wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &hyprland_ctm_control_manager_v1_interface, targetVersion));
+
+            if (targetVersion >= 2) {
+                state.pCTMMgr->setBlocked([](CCHyprlandCtmControlManagerV1*) {
+                    Debug::log(NONE, "✖ A CTM manager is already running on the current compositor.");
+                    exit(1);
+                });
+            }
+        } else if (IFACE == wl_output_interface.name) {
             if (std::find_if(state.outputs.begin(), state.outputs.end(), [name](const auto& el) { return el->id == name; }) != state.outputs.end())
                 return;
 
