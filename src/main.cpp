@@ -6,13 +6,13 @@ static void printHelp() {
     Debug::log(NONE, "┣ --gamma_max             →  Set the maximum display gamma (default 100%, maximum 200%)");
     Debug::log(NONE, "┣ --temperature       -t  →  Set the temperature in K (default 6000)");
     Debug::log(NONE, "┣ --identity          -i  →  Use the identity matrix (no color change)");
+    Debug::log(NONE, "┣ --verbose               →  Print more logging");
+    Debug::log(NONE, "┣ --version           -v  →  Print the version");
     Debug::log(NONE, "┣ --help              -h  →  Print this info");
     Debug::log(NONE, "╹");
 }
 
 int main(int argc, char** argv, char** envp) {
-    Debug::log(NONE, "┏ hyprsunset v{} ━━╸\n┃", HYPRSUNSET_VERSION);
-
     g_pHyprsunset = std::make_unique<CHyprsunset>();
 
     for (int i = 1; i < argc; ++i) {
@@ -64,12 +64,19 @@ int main(int argc, char** argv, char** envp) {
         } else if (argv[i] == std::string{"-h"} || argv[i] == std::string{"--help"}) {
             printHelp();
             return 0;
+        } else if (argv[i] == std::string{"-v"} || argv[i] == std::string{"--version"}) {
+            Debug::log(NONE, "hyprsunset v{}", HYPRSUNSET_VERSION);
+            return 0;
+        } else if (argv[i] == std::string{"--verbose"}) {
+            Debug::trace = true;
         } else {
             Debug::log(NONE, "✖ Argument not recognized: {}", argv[i]);
             printHelp();
             return 1;
         }
     }
+
+    Debug::log(NONE, "┏ hyprsunset v{} ━━╸\n┃", HYPRSUNSET_VERSION);
 
     if (!g_pHyprsunset->calculateMatrix())
         return 1;

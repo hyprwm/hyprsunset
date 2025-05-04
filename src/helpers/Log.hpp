@@ -16,8 +16,13 @@ enum LogLevel {
 };
 
 namespace Debug {
+    inline bool trace = false;
+
     template <typename... Args>
     void log(LogLevel level, std::format_string<Args...> fmt, Args&&... args) {
+        if (!trace && (level == LOG || level == INFO))
+            return;
+
         switch (level) {
             case NONE: break;
             case LOG: std::cout << "[LOG] "; break;

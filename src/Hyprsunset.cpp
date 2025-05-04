@@ -87,7 +87,7 @@ int CHyprsunset::init() {
         const std::string IFACE = interface;
 
         if (IFACE == hyprland_ctm_control_manager_v1_interface.name) {
-						auto targetVersion = std::min(version, 2u);
+            auto targetVersion = std::min(version, 2u);
 
             Debug::log(NONE, "┣ Found hyprland-ctm-control-v1 supported with version {}, binding to v{}", version, targetVersion);
             state.pCTMMgr = makeShared<CCHyprlandCtmControlManagerV1>(
