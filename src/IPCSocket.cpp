@@ -151,23 +151,21 @@ bool CIPCSocket::mainThreadParseRequest() {
 
         std::string        args   = copy.substr(spaceSeparator + 1);
         unsigned long long kelvin = g_pHyprsunset->KELVIN;
-        if (args[0] == '+' || args[0] == '-') {
-            try {
+        try {
+            if (args[0] == '+' || args[0] == '-') {
                 if (args[0] == '-')
                     kelvin -= std::stoull(args.substr(1));
                 else
                     kelvin += std::stoull(args.substr(1));
-            } catch (std::exception& e) {
-                m_szReply = "Invalid temperature (should be in range 1000-20000)";
-                return false;
-            }
-
-            kelvin = std::clamp(kelvin, 1000ull, 20000ull);
-        } else
-            kelvin = std::stoull(args);
-
+                kelvin = std::clamp(kelvin, 1000ull, 20000ull);
+            } else
+                kelvin = std::stoull(args);
+        } catch (std::exception& e) {
+            m_szReply = "Invalid temperature (should be an integer in range 1000-20000)";
+            return false;
+        }
         if (kelvin < 1000 || kelvin > 20000) {
-            m_szReply = "Invalid temperature (should be in range 1000-20000)";
+            m_szReply = "Invalid temperature (should be an integer in range 1000-20000)";
             return false;
         }
 
