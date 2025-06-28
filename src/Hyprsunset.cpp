@@ -115,6 +115,8 @@ int CHyprsunset::init() {
         }
     });
 
+    state.pRegistry->setGlobalRemove([this](CCWlRegistry* r, uint32_t name) { std::erase_if(state.outputs, [name](const auto& e) { return e->id == name; }); });
+
     wl_display_roundtrip(state.wlDisplay);
 
     if (!state.pCTMMgr) {
