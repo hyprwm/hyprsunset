@@ -105,7 +105,7 @@ int CHyprsunset::init() {
 
             Debug::log(NONE, "┣ Found new output with ID {}, binding", name);
             auto o = state.outputs.emplace_back(
-                makeShared<SOutput>(makeShared<CCWlOutput>((wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &wl_output_interface, 1)), name));
+                makeShared<SOutput>(makeShared<CCWlOutput>((wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &wl_output_interface, 3)), name));
 
             if (state.initialized) {
                 Debug::log(NONE, "┣ already initialized, applying CTM instantly", name);
