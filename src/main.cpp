@@ -1,5 +1,6 @@
 #include <iostream>
-#include "Hyprsunset.hpp"
+#include "ConfigManager.hpp"
+#include "src/helpers/Log.hpp"
 
 static void printHelp() {
     Debug::log(NONE, "┣ --gamma             -g  →  Set the display gamma (default 100%)");
@@ -13,6 +14,8 @@ static void printHelp() {
 }
 
 int main(int argc, char** argv, char** envp) {
+    std::string configPath;
+
     g_pHyprsunset = std::make_unique<CHyprsunset>();
 
     for (int i = 1; i < argc; ++i) {
@@ -61,6 +64,13 @@ int main(int argc, char** argv, char** envp) {
             ++i;
         } else if (argv[i] == std::string{"-i"} || argv[i] == std::string{"--identity"}) {
             g_pHyprsunset->identity = true;
+        } else if (argv[i] == std::string{"-c"} || argv[i] == std::string{"--config"}) {
+            if (i + 1 >= argc) {
+                Debug::log(NONE, "✖ No config path provided for {}", argv[i]);
+                return 1;
+            }
+
+            configPath = argv[i + 1];
         } else if (argv[i] == std::string{"-h"} || argv[i] == std::string{"--help"}) {
             printHelp();
             return 0;
@@ -77,6 +87,11 @@ int main(int argc, char** argv, char** envp) {
     }
 
     Debug::log(NONE, "┏ hyprsunset v{} ━━╸\n┃", HYPRSUNSET_VERSION);
+
+    try {
+        g_pConfigManager = makeUnique<CConfigManager>(configPath);
+        g_pConfigManager->init();
+    } catch (const std::exception& ex) { Debug::log(CRIT, "✖ Failed to initialize config manager: {}", ex.what()); }
 
     if (!g_pHyprsunset->calculateMatrix())
         return 1;

@@ -15,6 +15,7 @@
 #include <hyprutils/memory/WeakPtr.hpp>
 using namespace Hyprutils::Math;
 using namespace Hyprutils::Memory;
+#define UP CUniquePointer
 #define SP CSharedPointer
 #define WP CWeakPointer
 
@@ -43,11 +44,6 @@ struct SSunsetProfile {
     float         gamma       = 1.0f;
 };
 
-enum eTimePeriod {
-    DAY,
-    NIGHT
-};
-
 class CHyprsunset {
   public:
     float              MAX_GAMMA = 1.0f; // default
@@ -63,14 +59,13 @@ class CHyprsunset {
     void               tick();
 
   private:
-    static void    commitCTMs();
-    void           reload();
+    static void                 commitCTMs();
+    void                        reload();
 
-    eTimePeriod    currentTimePeriod();
-    void           schedule();
+    int                         currentProfile();
+    void                        schedule();
 
-    SSunsetProfile day;
-    SSunsetProfile night;
+    std::vector<SSunsetProfile> profiles;
 };
 
 inline std::unique_ptr<CHyprsunset> g_pHyprsunset;

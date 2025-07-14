@@ -62,6 +62,7 @@ pkg_check_modules(
   wayland-client
   wayland-protocols
   hyprutils>=0.2.3
+  hyprlang
   hyprwayland-scanner>=0.4.0)
 
 file(GLOB_RECURSE SRCFILES "src/*.cpp")

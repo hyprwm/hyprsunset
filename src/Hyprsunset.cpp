@@ -1,4 +1,4 @@
-#include "Hyprsunset.hpp"
+#include "ConfigManager.hpp"
 
 #include <thread>
 #include <chrono>
@@ -77,18 +77,6 @@ int CHyprsunset::init() {
 
     state.wlDisplay = wl_display_connect(nullptr);
 
-    day.time.hour   = std::chrono::hours(8);
-    day.time.minute = std::chrono::minutes(0);
-    day.temperature = 6500;
-    day.gamma       = 1.0f;
-
-    night.time.hour   = std::chrono::hours(17);
-    night.time.minute = std::chrono::minutes(05);
-    night.temperature = 5500;
-    night.gamma       = 0.8f;
-
-    currentTimePeriod();
-
     if (!state.wlDisplay) {
         Debug::log(NONE, "✖ Couldn't connect to a wayland compositor", KELVIN);
         return 0;
@@ -145,6 +133,17 @@ int CHyprsunset::init() {
         o->applyCTM(&state);
     }
 
+    profiles = g_pConfigManager->getSunsetProfiles();
+
+    std::sort(profiles.begin(), profiles.end(), [](const auto& a, const auto& b) {
+        if (a.time.hour < b.time.hour)
+            return true;
+        else if (a.time.hour > b.time.hour)
+            return false;
+        else
+            return a.time.minute < b.time.minute;
+    });
+
     commitCTMs();
 
     schedule();
@@ -168,32 +167,40 @@ void CHyprsunset::tick() {
     }
 }
 
-eTimePeriod CHyprsunset::currentTimePeriod() {
+int CHyprsunset::currentProfile() {
+    if (profiles.empty())
+        return -1;
+    else if (profiles.size() == 1)
+        return 0;
+
     auto now = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
 
-    auto dayTime_zt   = std::chrono::floor<std::chrono::days>(std::chrono::zoned_time(std::chrono::current_zone(), now).get_local_time()) + day.time.hour + day.time.minute;
-    auto nightTime_zt = std::chrono::floor<std::chrono::days>(std::chrono::zoned_time(std::chrono::current_zone(), now).get_local_time()) + night.time.hour + night.time.minute;
+    for (size_t i = 0; i < profiles.size(); ++i) {
+        const auto& p = profiles[i];
 
-    if (now >= dayTime_zt && now < nightTime_zt) {
-        return DAY;
-    } else {
-        return NIGHT;
+        auto        time = std::chrono::floor<std::chrono::days>(now) + p.time.hour + p.time.minute;
+
+        if (time >= now) {
+            if (i == 0)
+                return profiles.size() - 1;
+            return i - 1;
+        }
     }
+
+    return 0;
 }
 
 void CHyprsunset::schedule() {
     std::thread([&]() {
         while (true) {
-            eTimePeriod    current = currentTimePeriod();
-            SSunsetProfile nextSettings;
-            if (current == DAY)
-                nextSettings = night;
-            else
-                nextSettings = day;
+            int current = currentProfile();
+            if (current == -1)
+                break;
 
-            auto now  = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
-            auto time = std::chrono::floor<std::chrono::days>(std::chrono::zoned_time(std::chrono::current_zone(), now).get_local_time()) + nextSettings.time.hour +
-                nextSettings.time.minute;
+            SSunsetProfile nextSettings = (size_t)current == profiles.size() - 1 ? profiles[0] : profiles[current + 1];
+
+            auto           now  = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
+            auto           time = std::chrono::floor<std::chrono::days>(now) + nextSettings.time.hour + nextSettings.time.minute;
 
             if (now >= time) {
                 time += std::chrono::days(1);
@@ -206,12 +213,9 @@ void CHyprsunset::schedule() {
             KELVIN = nextSettings.temperature;
             GAMMA  = nextSettings.gamma;
 
-            reload();
+            Debug::log(NONE, "┣ Switched to new profile at: {}", time);
 
-            if (current == DAY)
-                Debug::log(LOG, "Switched to night mode");
-            else
-                Debug::log(LOG, "Switched to day mode");
+            reload();
         };
     }).detach();
 }
