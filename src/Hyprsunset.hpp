@@ -1,6 +1,5 @@
 #include <iostream>
 #include <cmath>
-#include <algorithm>
 #include <sys/signal.h>
 #include <wayland-client.h>
 #include <vector>
@@ -34,6 +33,21 @@ struct SState {
     Mat3x3                            ctm;
 };
 
+struct SSunsetProfile {
+    struct {
+        std::chrono::hours   hour;
+        std::chrono::minutes minute;
+    } time;
+
+    unsigned long temperature = 6000;
+    float         gamma       = 1.0f;
+};
+
+enum eTimePeriod {
+    DAY,
+    NIGHT
+};
+
 class CHyprsunset {
   public:
     float              MAX_GAMMA = 1.0f; // default
@@ -49,7 +63,14 @@ class CHyprsunset {
     void               tick();
 
   private:
-    static void commitCTMs();
+    static void    commitCTMs();
+    void           reload();
+
+    eTimePeriod    currentTimePeriod();
+    void           schedule();
+
+    SSunsetProfile day;
+    SSunsetProfile night;
 };
 
 inline std::unique_ptr<CHyprsunset> g_pHyprsunset;

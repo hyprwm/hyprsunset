@@ -1,5 +1,8 @@
 #include "Hyprsunset.hpp"
 
+#include <thread>
+#include <chrono>
+
 // kindly borrowed from https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html
 static Mat3x3 matrixForKelvin(unsigned long long temp) {
     float r = 1.F, g = 1.F, b = 1.F;
@@ -74,6 +77,18 @@ int CHyprsunset::init() {
 
     state.wlDisplay = wl_display_connect(nullptr);
 
+    day.time.hour   = std::chrono::hours(8);
+    day.time.minute = std::chrono::minutes(0);
+    day.temperature = 6500;
+    day.gamma       = 1.0f;
+
+    night.time.hour   = std::chrono::hours(17);
+    night.time.minute = std::chrono::minutes(05);
+    night.temperature = 5500;
+    night.gamma       = 0.8f;
+
+    currentTimePeriod();
+
     if (!state.wlDisplay) {
         Debug::log(NONE, "✖ Couldn't connect to a wayland compositor", KELVIN);
         return 0;
@@ -132,6 +147,8 @@ int CHyprsunset::init() {
 
     commitCTMs();
 
+    schedule();
+
     state.initialized = true;
 
     g_pIPCSocket = std::make_unique<CIPCSocket>();
@@ -147,15 +164,66 @@ int CHyprsunset::init() {
 
 void CHyprsunset::tick() {
     if (g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest()) {
-        // Reload
-        calculateMatrix();
-
-        for (auto& o : state.outputs) {
-            o->applyCTM(&state);
-        }
-
-        commitCTMs();
-
-        wl_display_flush(state.wlDisplay);
+        reload();
     }
+}
+
+eTimePeriod CHyprsunset::currentTimePeriod() {
+    auto now = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
+
+    auto dayTime_zt   = std::chrono::floor<std::chrono::days>(std::chrono::zoned_time(std::chrono::current_zone(), now).get_local_time()) + day.time.hour + day.time.minute;
+    auto nightTime_zt = std::chrono::floor<std::chrono::days>(std::chrono::zoned_time(std::chrono::current_zone(), now).get_local_time()) + night.time.hour + night.time.minute;
+
+    if (now >= dayTime_zt && now < nightTime_zt) {
+        return DAY;
+    } else {
+        return NIGHT;
+    }
+}
+
+void CHyprsunset::schedule() {
+    std::thread([&]() {
+        while (true) {
+            eTimePeriod    current = currentTimePeriod();
+            SSunsetProfile nextSettings;
+            if (current == DAY)
+                nextSettings = night;
+            else
+                nextSettings = day;
+
+            auto now  = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
+            auto time = std::chrono::floor<std::chrono::days>(std::chrono::zoned_time(std::chrono::current_zone(), now).get_local_time()) + nextSettings.time.hour +
+                nextSettings.time.minute;
+
+            if (now >= time) {
+                time += std::chrono::days(1);
+            }
+
+            auto system_time = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
+
+            std::this_thread::sleep_until(system_time);
+
+            KELVIN = nextSettings.temperature;
+            GAMMA  = nextSettings.gamma;
+
+            reload();
+
+            if (current == DAY)
+                Debug::log(LOG, "Switched to night mode");
+            else
+                Debug::log(LOG, "Switched to day mode");
+        };
+    }).detach();
+}
+
+void CHyprsunset::reload() {
+    calculateMatrix();
+
+    for (auto& o : state.outputs) {
+        o->applyCTM(&state);
+    }
+
+    commitCTMs();
+
+    wl_display_flush(state.wlDisplay);
 }
