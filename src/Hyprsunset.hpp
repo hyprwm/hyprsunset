@@ -1,4 +1,3 @@
-#include <iostream>
 #include <cmath>
 #include <sys/signal.h>
 #include <wayland-client.h>
@@ -6,9 +5,6 @@
 #include "protocols/hyprland-ctm-control-v1.hpp"
 #include "protocols/wayland.hpp"
 
-#include "helpers/Log.hpp"
-
-#include "IPCSocket.hpp"
 #include <mutex>
 
 #include <hyprutils/math/Mat3x3.hpp>

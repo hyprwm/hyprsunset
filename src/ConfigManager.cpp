@@ -4,6 +4,7 @@
 #include <hyprutils/path/Path.hpp>
 #include <string>
 #include <sys/ucontext.h>
+#include "helpers/Log.hpp"
 
 static std::string getMainConfigPath() {
     static const auto paths = Hyprutils::Path::findConfig("hyprsunset");

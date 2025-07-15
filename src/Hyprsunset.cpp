@@ -1,4 +1,6 @@
 #include "ConfigManager.hpp"
+#include "helpers/Log.hpp"
+#include "IPCSocket.hpp"
 
 #include <thread>
 #include <chrono>

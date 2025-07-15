@@ -1,5 +1,6 @@
 #include "IPCSocket.hpp"
 #include "Hyprsunset.hpp"
+#include "helpers/Log.hpp"
 
 #include <cerrno>
 #include <cstdio>

@@ -1,4 +1,3 @@
-#include <iostream>
 #include "ConfigManager.hpp"
 #include "src/helpers/Log.hpp"
 
