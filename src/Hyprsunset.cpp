@@ -181,6 +181,7 @@ void CHyprsunset::loadCurrentProfile() {
     KELVIN                 = profile.temperature;
     GAMMA                  = profile.gamma;
     identity               = profile.identity;
+    MAX_GAMMA              = g_pConfigManager->getMaxGamma();
 }
 
 int CHyprsunset::currentProfile() {

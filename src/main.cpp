@@ -17,6 +17,7 @@ int main(int argc, char** argv, char** envp) {
 
     int         kelvin   = -1;
     float       gamma    = -1;
+    float       maxGamma = -1;
     bool        identity = false;
 
     g_pHyprsunset = std::make_unique<CHyprsunset>();
@@ -57,7 +58,7 @@ int main(int argc, char** argv, char** envp) {
             }
 
             try {
-                g_pHyprsunset->MAX_GAMMA = std::stof(argv[i + 1]) / 100;
+                maxGamma = std::stof(argv[i + 1]) / 100;
             } catch (std::exception& e) {
                 Debug::log(NONE, "✖ Maximum gamma {} is not valid", argv[i + 1]);
                 return 1;
@@ -108,13 +109,14 @@ int main(int argc, char** argv, char** envp) {
         g_pHyprsunset->identity  = false;
     }
 
-    if (gamma != -1) {
+    if (gamma != -1)
         g_pHyprsunset->GAMMA = gamma;
-    }
 
-    if (identity) {
+    if (maxGamma != -1)
+        g_pHyprsunset->MAX_GAMMA = maxGamma;
+
+    if (identity)
         g_pHyprsunset->identity = true;
-    }
 
     if (!g_pHyprsunset->calculateMatrix())
         return 1;

@@ -9,6 +9,7 @@ class CConfigManager {
     CConfigManager(std::string configPath);
 
     std::vector<SSunsetProfile> getSunsetProfiles();
+    float                       getMaxGamma();
 
     void                        init();
 

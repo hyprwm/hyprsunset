@@ -20,6 +20,8 @@ CConfigManager::CConfigManager(std::string configPath) :
 }
 
 void CConfigManager::init() {
+    m_config.addConfigValue("max-gamma", Hyprlang::INT{100});
+
     m_config.addSpecialCategory("profile", Hyprlang::SSpecialCategoryOptions{.key = nullptr, .anonymousKeyBased = true});
     m_config.addSpecialConfigValue("profile", "time", Hyprlang::STRING{"00:00"});
     m_config.addSpecialConfigValue("profile", "temperature", Hyprlang::INT{6500});
@@ -86,4 +88,12 @@ std::vector<SSunsetProfile> CConfigManager::getSunsetProfiles() {
     }
 
     return result;
+}
+
+float CConfigManager::getMaxGamma() {
+    try {
+        return std::any_cast<Hyprlang::INT>(m_config.getConfigValue("max-gamma")) / 100.f;
+    } catch (const std::bad_any_cast& e) {
+        RASSERT(false, "Failed to construct max-gamma: {}", e.what()); //
+    }
 }
