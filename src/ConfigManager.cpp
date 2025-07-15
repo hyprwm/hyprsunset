@@ -59,13 +59,12 @@ std::vector<SSunsetProfile> CConfigManager::getSunsetProfiles() {
             RASSERT(false, "Missing property for Profile: {}", e.what()); //
         }
 
-        int separator = time.find_first_of(':');
+        size_t separator = time.find(':');
 
-        if (separator == -1) {
+        if (separator == std::string::npos)
             RASSERT(false, "Invalid time format for profile {}", key);
-        }
 
-        int hour, minute;
+        int hour = 0, minute = 0;
         try {
             hour   = std::stoi(time.substr(0, separator));
             minute = std::stoi(time.substr(separator + 1).c_str());
