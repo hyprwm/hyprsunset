@@ -92,7 +92,10 @@ int main(int argc, char** argv, char** envp) {
         g_pConfigManager->init();
 
         g_pHyprsunset->loadCurrentProfile();
-    } catch (const std::exception& ex) { Debug::log(CRIT, "✖ Failed to initialize config manager: {}", ex.what()); }
+    } catch (const std::exception& ex) {
+        if (std::string(ex.what()).contains("Could not find config"))
+            Debug::log(NONE, "┣ No config provided, consider creating one\n");
+    }
 
     if (!g_pHyprsunset->calculateMatrix())
         return 1;

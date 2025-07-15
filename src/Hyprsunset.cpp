@@ -161,6 +161,8 @@ void CHyprsunset::tick() {
 void CHyprsunset::loadCurrentProfile() {
     profiles = g_pConfigManager->getSunsetProfiles();
 
+    Debug::log(NONE, "┣ Loaded {} profiles, applying the current one", profiles.size());
+
     std::sort(profiles.begin(), profiles.end(), [](const auto& a, const auto& b) {
         if (a.time.hour < b.time.hour)
             return true;
