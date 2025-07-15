@@ -15,6 +15,10 @@ static void printHelp() {
 int main(int argc, char** argv, char** envp) {
     std::string configPath;
 
+    int         kelvin   = -1;
+    float       gamma    = -1;
+    bool        identity = false;
+
     g_pHyprsunset = std::make_unique<CHyprsunset>();
 
     for (int i = 1; i < argc; ++i) {
@@ -25,8 +29,7 @@ int main(int argc, char** argv, char** envp) {
             }
 
             try {
-                g_pHyprsunset->KELVIN    = std::stoull(argv[i + 1]);
-                g_pHyprsunset->kelvinSet = true;
+                kelvin = std::stoull(argv[i + 1]);
             } catch (std::exception& e) {
                 Debug::log(NONE, "✖ Temperature {} is not valid", argv[i + 1]);
                 return 1;
@@ -40,7 +43,7 @@ int main(int argc, char** argv, char** envp) {
             }
 
             try {
-                g_pHyprsunset->GAMMA = std::stof(argv[i + 1]) / 100;
+                gamma = std::stof(argv[i + 1]) / 100;
             } catch (std::exception& e) {
                 Debug::log(NONE, "✖ Gamma {} is not valid", argv[i + 1]);
                 return 1;
@@ -62,7 +65,7 @@ int main(int argc, char** argv, char** envp) {
 
             ++i;
         } else if (argv[i] == std::string{"-i"} || argv[i] == std::string{"--identity"}) {
-            g_pHyprsunset->identity = true;
+            identity = true;
         } else if (argv[i] == std::string{"-c"} || argv[i] == std::string{"--config"}) {
             if (i + 1 >= argc) {
                 Debug::log(NONE, "✖ No config path provided for {}", argv[i]);
@@ -97,6 +100,20 @@ int main(int argc, char** argv, char** envp) {
             Debug::log(NONE, "┣ No config provided, consider creating one\n");
         else
             Debug::log(ERR, "┣ Config error: {}", ex.what());
+    }
+
+    if (kelvin != -1) {
+        g_pHyprsunset->KELVIN    = kelvin;
+        g_pHyprsunset->kelvinSet = true;
+        g_pHyprsunset->identity  = false;
+    }
+
+    if (gamma != -1) {
+        g_pHyprsunset->GAMMA = gamma;
+    }
+
+    if (identity) {
+        g_pHyprsunset->identity = true;
     }
 
     if (!g_pHyprsunset->calculateMatrix())
