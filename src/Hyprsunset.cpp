@@ -180,6 +180,7 @@ void CHyprsunset::loadCurrentProfile() {
     SSunsetProfile profile = g_pHyprsunset->profiles[current];
     KELVIN                 = profile.temperature;
     GAMMA                  = profile.gamma;
+    identity               = profile.identity;
 }
 
 int CHyprsunset::currentProfile() {
@@ -225,8 +226,9 @@ void CHyprsunset::schedule() {
 
             std::this_thread::sleep_until(system_time);
 
-            KELVIN = nextSettings.temperature;
-            GAMMA  = nextSettings.gamma;
+            KELVIN   = nextSettings.temperature;
+            GAMMA    = nextSettings.gamma;
+            identity = nextSettings.identity;
 
             Debug::log(NONE, "┣ Switched to new profile at: {}", time);
 

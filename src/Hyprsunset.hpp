@@ -38,6 +38,7 @@ struct SSunsetProfile {
 
     unsigned long temperature = 6000;
     float         gamma       = 1.0f;
+    bool          identity    = false;
 };
 
 class CHyprsunset {
