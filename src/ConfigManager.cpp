@@ -8,14 +8,12 @@
 
 static std::string getMainConfigPath() {
     static const auto paths = Hyprutils::Path::findConfig("hyprsunset");
-    if (paths.first.has_value())
-        return paths.first.value();
-    else
-        throw std::runtime_error("Could not find config in HOME, XDG_CONFIG_HOME, XDG_CONFIG_DIRS or /etc/hypr.");
+
+    return paths.first.value_or("");
 }
 
 CConfigManager::CConfigManager(std::string configPath) :
-    m_config(configPath.empty() ? getMainConfigPath().c_str() : configPath.c_str(), Hyprlang::SConfigOptions{.throwAllErrors = true, .allowMissingConfig = configPath.empty()}) {
+    m_config(configPath.empty() ? getMainConfigPath().c_str() : configPath.c_str(), Hyprlang::SConfigOptions{.throwAllErrors = true, .allowMissingConfig = true}) {
     currentConfigPath = configPath.empty() ? getMainConfigPath() : configPath;
 }
 

@@ -91,17 +91,10 @@ int main(int argc, char** argv, char** envp) {
 
     Debug::log(NONE, "┏ hyprsunset v{} ━━╸\n┃", HYPRSUNSET_VERSION);
 
-    try {
-        g_pConfigManager = makeUnique<CConfigManager>(configPath);
-        g_pConfigManager->init();
+    g_pConfigManager = makeUnique<CConfigManager>(configPath);
+    g_pConfigManager->init();
 
-        g_pHyprsunset->loadCurrentProfile();
-    } catch (const std::exception& ex) {
-        if (std::string(ex.what()).contains("Could not find config"))
-            Debug::log(NONE, "┣ No config provided, consider creating one\n");
-        else
-            Debug::log(ERR, "┣ Config error: {}", ex.what());
-    }
+    g_pHyprsunset->loadCurrentProfile();
 
     if (kelvin != -1) {
         g_pHyprsunset->KELVIN    = kelvin;

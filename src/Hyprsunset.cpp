@@ -161,7 +161,7 @@ void CHyprsunset::tick() {
 void CHyprsunset::loadCurrentProfile() {
     profiles = g_pConfigManager->getSunsetProfiles();
 
-    Debug::log(NONE, "┣ Loaded {} profiles, applying the current one", profiles.size());
+    Debug::log(NONE, "┣ Loaded {} profiles", profiles.size());
 
     std::sort(profiles.begin(), profiles.end(), [](const auto& a, const auto& b) {
         if (a.time.hour < b.time.hour)
@@ -182,6 +182,8 @@ void CHyprsunset::loadCurrentProfile() {
     GAMMA                  = profile.gamma;
     identity               = profile.identity;
     MAX_GAMMA              = g_pConfigManager->getMaxGamma();
+
+    Debug::log(NONE, "┣ Applying profile from: {}:{}", profile.time.hour.count(), profile.time.minute.count());
 }
 
 int CHyprsunset::currentProfile() {
@@ -214,10 +216,10 @@ void CHyprsunset::schedule() {
             if (current == -1)
                 break;
 
-            SSunsetProfile nextSettings = (size_t)current == profiles.size() - 1 ? profiles[0] : profiles[current + 1];
+            SSunsetProfile nextProfile = (size_t)current == profiles.size() - 1 ? profiles[0] : profiles[current + 1];
 
             auto           now  = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
-            auto           time = std::chrono::floor<std::chrono::days>(now) + nextSettings.time.hour + nextSettings.time.minute;
+            auto           time = std::chrono::floor<std::chrono::days>(now) + nextProfile.time.hour + nextProfile.time.minute;
 
             if (now >= time) {
                 time += std::chrono::days(1);
@@ -227,11 +229,11 @@ void CHyprsunset::schedule() {
 
             std::this_thread::sleep_until(system_time);
 
-            KELVIN   = nextSettings.temperature;
-            GAMMA    = nextSettings.gamma;
-            identity = nextSettings.identity;
+            KELVIN   = nextProfile.temperature;
+            GAMMA    = nextProfile.gamma;
+            identity = nextProfile.identity;
 
-            Debug::log(NONE, "┣ Switched to new profile at: {}", time);
+            Debug::log(NONE, "┣ Switched to new profile from: {}:{}", nextProfile.time.hour.count(), nextProfile.time.minute.count());
 
             reload();
         };
