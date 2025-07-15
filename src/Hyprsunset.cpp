@@ -145,7 +145,7 @@ int CHyprsunset::init() {
     g_pIPCSocket->initialize();
 
     while (wl_display_dispatch(state.wlDisplay) != -1) {
-        std::lock_guard<std::mutex> lg(m_mtTickMutex);
+        std::lock_guard<std::mutex> lg(m_mtReloadMutex);
         tick();
     }
 
@@ -229,6 +229,7 @@ void CHyprsunset::schedule() {
 
             std::this_thread::sleep_until(system_time);
 
+            std::lock_guard lg(m_mtReloadMutex);
             KELVIN   = nextProfile.temperature;
             GAMMA    = nextProfile.gamma;
             identity = nextProfile.identity;

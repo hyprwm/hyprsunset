@@ -48,7 +48,7 @@ class CHyprsunset {
     unsigned long long KELVIN    = 6000; // default
     bool               kelvinSet = false, identity = false;
     SState             state;
-    std::mutex         m_mtTickMutex;
+    std::mutex         m_mtReloadMutex;
 
     int                calculateMatrix();
     int                init();
