@@ -63,8 +63,14 @@ std::vector<SSunsetProfile> CConfigManager::getSunsetProfiles() {
             RASSERT(false, "Invalid time format for profile {}", key);
         }
 
-        int hour   = std::stoi(time.substr(0, separator));
-        int minute = std::stoi(time.substr(separator + 1).c_str());
+        int hour, minute;
+        try {
+            hour   = std::stoi(time.substr(0, separator));
+            minute = std::stoi(time.substr(separator + 1).c_str());
+        } catch (const std::exception& e) {
+            Debug::log(ERR, "Invalid time format: {}, skipping this profile", time);
+            continue;
+        }
 
         // clang-format off
         result.push_back(SSunsetProfile{

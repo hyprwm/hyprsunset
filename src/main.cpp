@@ -95,6 +95,8 @@ int main(int argc, char** argv, char** envp) {
     } catch (const std::exception& ex) {
         if (std::string(ex.what()).contains("Could not find config"))
             Debug::log(NONE, "┣ No config provided, consider creating one\n");
+        else
+            Debug::log(ERR, "┣ Config error: {}", ex.what());
     }
 
     if (!g_pHyprsunset->calculateMatrix())
