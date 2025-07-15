@@ -54,16 +54,15 @@ class CHyprsunset {
     std::mutex         m_mtTickMutex;
 
     int                calculateMatrix();
-    int                applySettings();
     int                init();
     void               tick();
+    void               loadCurrentProfile();
 
   private:
     static void                 commitCTMs();
     void                        reload();
-
-    int                         currentProfile();
     void                        schedule();
+    int                         currentProfile();
 
     std::vector<SSunsetProfile> profiles;
 };

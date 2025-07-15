@@ -133,17 +133,6 @@ int CHyprsunset::init() {
         o->applyCTM(&state);
     }
 
-    profiles = g_pConfigManager->getSunsetProfiles();
-
-    std::sort(profiles.begin(), profiles.end(), [](const auto& a, const auto& b) {
-        if (a.time.hour < b.time.hour)
-            return true;
-        else if (a.time.hour > b.time.hour)
-            return false;
-        else
-            return a.time.minute < b.time.minute;
-    });
-
     commitCTMs();
 
     schedule();
@@ -165,6 +154,28 @@ void CHyprsunset::tick() {
     if (g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest()) {
         reload();
     }
+}
+
+void CHyprsunset::loadCurrentProfile() {
+    profiles = g_pConfigManager->getSunsetProfiles();
+
+    std::sort(profiles.begin(), profiles.end(), [](const auto& a, const auto& b) {
+        if (a.time.hour < b.time.hour)
+            return true;
+        else if (a.time.hour > b.time.hour)
+            return false;
+        else
+            return a.time.minute < b.time.minute;
+    });
+
+    int current = g_pHyprsunset->currentProfile();
+
+    if (current == -1)
+        return;
+
+    SSunsetProfile profile = g_pHyprsunset->profiles[current];
+    KELVIN                 = profile.temperature;
+    GAMMA                  = profile.gamma;
 }
 
 int CHyprsunset::currentProfile() {

@@ -91,6 +91,8 @@ int main(int argc, char** argv, char** envp) {
     try {
         g_pConfigManager = makeUnique<CConfigManager>(configPath);
         g_pConfigManager->init();
+
+        g_pHyprsunset->loadCurrentProfile();
     } catch (const std::exception& ex) { Debug::log(CRIT, "✖ Failed to initialize config manager: {}", ex.what()); }
 
     if (!g_pHyprsunset->calculateMatrix())
