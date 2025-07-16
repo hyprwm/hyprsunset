@@ -206,7 +206,7 @@ int CHyprsunset::currentProfile() {
         }
     }
 
-    return 0;
+    return profiles.size() - 1;
 }
 
 void CHyprsunset::schedule() {
