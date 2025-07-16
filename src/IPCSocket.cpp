@@ -60,7 +60,7 @@ void CIPCSocket::initialize() {
             } else {
                 do {
                     Debug::log(LOG, "Accepted incoming socket connection request on fd {}", ACCEPTEDCONNECTION);
-                    std::lock_guard<std::mutex> lg(g_pHyprsunset->m_mtReloadMutex);
+                    std::lock_guard<std::mutex> lg(g_pHyprsunset->m_sEventLoopInternals.loopRequestMutex);
 
                     auto                        messageSize              = read(ACCEPTEDCONNECTION, readBuffer, 1024);
                     readBuffer[messageSize == 1024 ? 1023 : messageSize] = '\0';

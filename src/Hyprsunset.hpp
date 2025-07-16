@@ -2,10 +2,10 @@
 #include <sys/signal.h>
 #include <wayland-client.h>
 #include <vector>
+#include <mutex>
+#include <condition_variable>
 #include "protocols/hyprland-ctm-control-v1.hpp"
 #include "protocols/wayland.hpp"
-
-#include <mutex>
 
 #include <hyprutils/math/Mat3x3.hpp>
 #include <hyprutils/memory/WeakPtr.hpp>
@@ -48,18 +48,29 @@ class CHyprsunset {
     unsigned long long KELVIN    = 6000; // default
     bool               kelvinSet = false, identity = false;
     SState             state;
-    std::mutex         m_mtReloadMutex;
+    bool               m_bTerminate = false;
 
     int                calculateMatrix();
     int                init();
     void               tick();
     void               loadCurrentProfile();
+    void               terminate();
+
+    struct {
+        std::condition_variable loopSignal;
+        std::mutex              loopMutex;
+        std::mutex              loopRequestMutex;
+
+        bool                    shouldProcess = false;
+        bool                    isScheduled   = false;
+    } m_sEventLoopInternals;
 
   private:
     static void                 commitCTMs();
     void                        reload();
     void                        schedule();
     int                         currentProfile();
+    void                        startEventLoop();
 
     std::vector<SSunsetProfile> profiles;
 };

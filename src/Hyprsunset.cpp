@@ -1,9 +1,12 @@
 #include "ConfigManager.hpp"
 #include "helpers/Log.hpp"
 #include "IPCSocket.hpp"
-
+#include <cstring>
+#include <mutex>
 #include <thread>
 #include <chrono>
+#include <sys/poll.h>
+#include <wayland-client-core.h>
 
 // kindly borrowed from https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html
 static Mat3x3 matrixForKelvin(unsigned long long temp) {
@@ -30,6 +33,8 @@ static Mat3x3 matrixForKelvin(unsigned long long temp) {
 static void sigHandler(int sig) {
     if (g_pHyprsunset->state.pCTMMgr) // reset the CTM state...
         g_pHyprsunset->state.pCTMMgr.reset();
+
+    g_pHyprsunset->terminate();
 
     Debug::log(NONE, "┣ Exiting on user interrupt\n╹");
 
@@ -144,17 +149,81 @@ int CHyprsunset::init() {
     g_pIPCSocket = std::make_unique<CIPCSocket>();
     g_pIPCSocket->initialize();
 
-    while (wl_display_dispatch(state.wlDisplay) != -1) {
-        std::lock_guard<std::mutex> lg(m_mtReloadMutex);
-        tick();
-    }
+    startEventLoop();
 
     return 1;
 }
 
+void CHyprsunset::startEventLoop() {
+    pollfd      pollfds[] = {{
+             .fd     = wl_display_get_fd(state.wlDisplay),
+             .events = POLLIN,
+    }};
+
+    std::thread pollThread([&]() {
+        while (1) {
+            int ret = poll(pollfds, 1, 5000);
+            if (ret == -1) {
+                Debug::log(CRIT, "[core] Polling fds failed with {}", strerror(errno));
+                terminate();
+            }
+
+            if (pollfds[0].events & POLLHUP) {
+                Debug::log(CRIT, "[core] Disconnected from pollfd");
+                terminate();
+            }
+
+            if (ret != 0) {
+                std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
+                m_sEventLoopInternals.shouldProcess = true;
+                m_sEventLoopInternals.loopSignal.notify_one();
+            }
+        }
+    });
+
+    while (1) {
+        std::unique_lock<std::mutex> lk(m_sEventLoopInternals.loopMutex);
+
+        if (!m_sEventLoopInternals.shouldProcess)
+            m_sEventLoopInternals.loopSignal.wait_for(lk, std::chrono::milliseconds(5000), [this] { return m_sEventLoopInternals.shouldProcess; });
+
+        if (m_bTerminate)
+            break;
+
+        std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
+
+        m_sEventLoopInternals.shouldProcess = false;
+
+        if (pollfds[0].revents & POLLIN) {
+            wl_display_flush(state.wlDisplay);
+            if (wl_display_prepare_read(state.wlDisplay) == 0) {
+                wl_display_read_events(state.wlDisplay);
+                wl_display_dispatch_pending(state.wlDisplay);
+            } else {
+                wl_display_dispatch(state.wlDisplay);
+            }
+        }
+
+        tick();
+    }
+
+    wl_display_disconnect(state.wlDisplay);
+    pollThread.join();
+}
+
 void CHyprsunset::tick() {
-    if (g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest()) {
-        reload();
+    if ((g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest()) || m_sEventLoopInternals.isScheduled) {
+        calculateMatrix();
+
+        for (auto& o : state.outputs) {
+            o->applyCTM(&state);
+        }
+
+        commitCTMs();
+
+        wl_display_flush(state.wlDisplay);
+
+        m_sEventLoopInternals.isScheduled = false;
     }
 }
 
@@ -229,26 +298,23 @@ void CHyprsunset::schedule() {
 
             std::this_thread::sleep_until(system_time);
 
-            std::lock_guard lg(m_mtReloadMutex);
+            std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
             KELVIN   = nextProfile.temperature;
             GAMMA    = nextProfile.gamma;
             identity = nextProfile.identity;
 
             Debug::log(NONE, "┣ Switched to new profile from: {}:{}", nextProfile.time.hour.count(), nextProfile.time.minute.count());
 
-            reload();
+            m_sEventLoopInternals.shouldProcess = true;
+            m_sEventLoopInternals.isScheduled   = true;
+            m_sEventLoopInternals.loopSignal.notify_all();
         };
     }).detach();
 }
 
-void CHyprsunset::reload() {
-    calculateMatrix();
+void CHyprsunset::terminate() {
+    m_sEventLoopInternals.shouldProcess = true;
+    m_sEventLoopInternals.loopSignal.notify_all();
 
-    for (auto& o : state.outputs) {
-        o->applyCTM(&state);
-    }
-
-    commitCTMs();
-
-    wl_display_flush(state.wlDisplay);
+    m_bTerminate = true;
 }

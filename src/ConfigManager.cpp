@@ -22,7 +22,7 @@ void CConfigManager::init() {
 
     m_config.addSpecialCategory("profile", Hyprlang::SSpecialCategoryOptions{.key = nullptr, .anonymousKeyBased = true});
     m_config.addSpecialConfigValue("profile", "time", Hyprlang::STRING{"00:00"});
-    m_config.addSpecialConfigValue("profile", "temperature", Hyprlang::INT{6500});
+    m_config.addSpecialConfigValue("profile", "temperature", Hyprlang::INT{6000});
     m_config.addSpecialConfigValue("profile", "gamma", Hyprlang::FLOAT{1.0f});
     m_config.addSpecialConfigValue("profile", "identity", Hyprlang::INT{0});
 
