@@ -136,13 +136,7 @@ int CHyprsunset::init() {
 
     Debug::log(NONE, "┣ Found {} outputs, applying CTMs", state.outputs.size());
 
-    for (auto& o : state.outputs) {
-        o->applyCTM(&state);
-    }
-
-    commitCTMs();
-
-    schedule();
+    reload();
 
     state.initialized = true;
 
@@ -204,7 +198,12 @@ void CHyprsunset::startEventLoop() {
             }
         }
 
-        tick();
+        if (m_sEventLoopInternals.isScheduled)
+            reload();
+        else
+            tick();
+
+        m_sEventLoopInternals.isScheduled = false;
     }
 
     wl_display_disconnect(state.wlDisplay);
@@ -212,19 +211,21 @@ void CHyprsunset::startEventLoop() {
 }
 
 void CHyprsunset::tick() {
-    if ((g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest()) || m_sEventLoopInternals.isScheduled) {
-        calculateMatrix();
-
-        for (auto& o : state.outputs) {
-            o->applyCTM(&state);
-        }
-
-        commitCTMs();
-
-        wl_display_flush(state.wlDisplay);
-
-        m_sEventLoopInternals.isScheduled = false;
+    if (g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest()) {
+        reload();
     }
+}
+
+void CHyprsunset::reload() {
+    calculateMatrix();
+
+    for (auto& o : state.outputs) {
+        o->applyCTM(&state);
+    }
+
+    commitCTMs();
+
+    wl_display_flush(state.wlDisplay);
 }
 
 void CHyprsunset::loadCurrentProfile() {
