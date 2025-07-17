@@ -290,9 +290,8 @@ void CHyprsunset::schedule() {
             auto           now  = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
             auto           time = std::chrono::floor<std::chrono::days>(now) + nextProfile.time.hour + nextProfile.time.minute;
 
-            if (now >= time) {
+            if (now >= time)
                 time += std::chrono::days(1);
-            }
 
             auto system_time = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
 
