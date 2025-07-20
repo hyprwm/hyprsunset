@@ -14,6 +14,7 @@ in {
 
   hyprsunset = lib.composeManyExtensions [
     inputs.hyprland-protocols.overlays.default
+    inputs.hyprlang.overlays.default
     inputs.hyprutils.overlays.default
     inputs.hyprwayland-scanner.overlays.default
     (final: prev: {

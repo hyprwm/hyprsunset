@@ -1,21 +1,17 @@
-#include <iostream>
 #include <cmath>
-#include <algorithm>
 #include <sys/signal.h>
 #include <wayland-client.h>
 #include <vector>
+#include <mutex>
+#include <condition_variable>
 #include "protocols/hyprland-ctm-control-v1.hpp"
 #include "protocols/wayland.hpp"
-
-#include "helpers/Log.hpp"
-
-#include "IPCSocket.hpp"
-#include <mutex>
 
 #include <hyprutils/math/Mat3x3.hpp>
 #include <hyprutils/memory/WeakPtr.hpp>
 using namespace Hyprutils::Math;
 using namespace Hyprutils::Memory;
+#define UP CUniquePointer
 #define SP CSharedPointer
 #define WP CWeakPointer
 
@@ -34,6 +30,17 @@ struct SState {
     Mat3x3                            ctm;
 };
 
+struct SSunsetProfile {
+    struct {
+        std::chrono::hours   hour;
+        std::chrono::minutes minute;
+    } time;
+
+    unsigned long temperature = 6000;
+    float         gamma       = 1.0f;
+    bool          identity    = false;
+};
+
 class CHyprsunset {
   public:
     float              MAX_GAMMA = 1.0f; // default
@@ -41,15 +48,31 @@ class CHyprsunset {
     unsigned long long KELVIN    = 6000; // default
     bool               kelvinSet = false, identity = false;
     SState             state;
-    std::mutex         m_mtTickMutex;
+    bool               m_bTerminate = false;
 
     int                calculateMatrix();
-    int                applySettings();
     int                init();
     void               tick();
+    void               loadCurrentProfile();
+    void               terminate();
+
+    struct {
+        std::condition_variable loopSignal;
+        std::mutex              loopMutex;
+        std::mutex              loopRequestMutex;
+
+        bool                    shouldProcess = false;
+        bool                    isScheduled   = false;
+    } m_sEventLoopInternals;
 
   private:
-    static void commitCTMs();
+    static void                 commitCTMs();
+    void                        reload();
+    void                        schedule();
+    int                         currentProfile();
+    void                        startEventLoop();
+
+    std::vector<SSunsetProfile> profiles;
 };
 
 inline std::unique_ptr<CHyprsunset> g_pHyprsunset;

@@ -17,6 +17,13 @@
       inputs.systems.follows = "systems";
     };
 
+    hyprlang = {
+      url = "github:hyprwm/hyprlang";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.systems.follows = "systems";
+      inputs.hyprutils.follows = "hyprutils";
+    };
+
     hyprwayland-scanner = {
       url = "github:hyprwm/hyprwayland-scanner";
       inputs.nixpkgs.follows = "nixpkgs";

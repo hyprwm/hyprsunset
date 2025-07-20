@@ -5,6 +5,7 @@
   pkg-config,
   hyprland-protocols,
   hyprutils,
+  hyprlang,
   hyprwayland-scanner,
   wayland,
   wayland-protocols,
@@ -35,6 +36,7 @@ in
     buildInputs = [
       hyprland-protocols
       hyprutils
+      hyprlang
       wayland
       wayland-protocols
       wayland-scanner

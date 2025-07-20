@@ -1,4 +1,12 @@
-#include "Hyprsunset.hpp"
+#include "ConfigManager.hpp"
+#include "helpers/Log.hpp"
+#include "IPCSocket.hpp"
+#include <cstring>
+#include <mutex>
+#include <thread>
+#include <chrono>
+#include <sys/poll.h>
+#include <wayland-client-core.h>
 
 // kindly borrowed from https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html
 static Mat3x3 matrixForKelvin(unsigned long long temp) {
@@ -25,6 +33,8 @@ static Mat3x3 matrixForKelvin(unsigned long long temp) {
 static void sigHandler(int sig) {
     if (g_pHyprsunset->state.pCTMMgr) // reset the CTM state...
         g_pHyprsunset->state.pCTMMgr.reset();
+
+    g_pHyprsunset->terminate();
 
     Debug::log(NONE, "┣ Exiting on user interrupt\n╹");
 
@@ -126,36 +136,185 @@ int CHyprsunset::init() {
 
     Debug::log(NONE, "┣ Found {} outputs, applying CTMs", state.outputs.size());
 
-    for (auto& o : state.outputs) {
-        o->applyCTM(&state);
-    }
-
-    commitCTMs();
+    reload();
 
     state.initialized = true;
 
     g_pIPCSocket = std::make_unique<CIPCSocket>();
     g_pIPCSocket->initialize();
 
-    while (wl_display_dispatch(state.wlDisplay) != -1) {
-        std::lock_guard<std::mutex> lg(m_mtTickMutex);
-        tick();
-    }
+    startEventLoop();
 
     return 1;
 }
 
-void CHyprsunset::tick() {
-    if (g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest()) {
-        // Reload
-        calculateMatrix();
+void CHyprsunset::startEventLoop() {
+    pollfd      pollfds[] = {{
+             .fd     = wl_display_get_fd(state.wlDisplay),
+             .events = POLLIN,
+    }};
 
-        for (auto& o : state.outputs) {
-            o->applyCTM(&state);
+    std::thread pollThread([&]() {
+        while (1) {
+            int ret = poll(pollfds, 1, 5000);
+            if (ret == -1) {
+                Debug::log(CRIT, "[core] Polling fds failed with {}", strerror(errno));
+                terminate();
+            }
+
+            if (pollfds[0].events & POLLHUP) {
+                Debug::log(CRIT, "[core] Disconnected from pollfd");
+                terminate();
+            }
+
+            if (ret != 0) {
+                std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
+                m_sEventLoopInternals.shouldProcess = true;
+                m_sEventLoopInternals.loopSignal.notify_one();
+            }
+        }
+    });
+
+    while (1) {
+        std::unique_lock<std::mutex> lk(m_sEventLoopInternals.loopMutex);
+
+        if (!m_sEventLoopInternals.shouldProcess)
+            m_sEventLoopInternals.loopSignal.wait_for(lk, std::chrono::milliseconds(5000), [this] { return m_sEventLoopInternals.shouldProcess; });
+
+        if (m_bTerminate)
+            break;
+
+        std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
+
+        m_sEventLoopInternals.shouldProcess = false;
+
+        if (pollfds[0].revents & POLLIN) {
+            wl_display_flush(state.wlDisplay);
+            if (wl_display_prepare_read(state.wlDisplay) == 0) {
+                wl_display_read_events(state.wlDisplay);
+                wl_display_dispatch_pending(state.wlDisplay);
+            } else {
+                wl_display_dispatch(state.wlDisplay);
+            }
         }
 
-        commitCTMs();
+        if (m_sEventLoopInternals.isScheduled)
+            reload();
+        else
+            tick();
 
-        wl_display_flush(state.wlDisplay);
+        m_sEventLoopInternals.isScheduled = false;
     }
+
+    wl_display_disconnect(state.wlDisplay);
+    pollThread.join();
+}
+
+void CHyprsunset::tick() {
+    if (g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest()) {
+        reload();
+    }
+}
+
+void CHyprsunset::reload() {
+    calculateMatrix();
+
+    for (auto& o : state.outputs) {
+        o->applyCTM(&state);
+    }
+
+    commitCTMs();
+
+    wl_display_flush(state.wlDisplay);
+}
+
+void CHyprsunset::loadCurrentProfile() {
+    profiles = g_pConfigManager->getSunsetProfiles();
+
+    Debug::log(NONE, "┣ Loaded {} profiles", profiles.size());
+
+    std::sort(profiles.begin(), profiles.end(), [](const auto& a, const auto& b) {
+        if (a.time.hour < b.time.hour)
+            return true;
+        else if (a.time.hour > b.time.hour)
+            return false;
+        else
+            return a.time.minute < b.time.minute;
+    });
+
+    int current = g_pHyprsunset->currentProfile();
+
+    if (current == -1)
+        return;
+
+    SSunsetProfile profile = g_pHyprsunset->profiles[current];
+    KELVIN                 = profile.temperature;
+    GAMMA                  = profile.gamma;
+    identity               = profile.identity;
+    MAX_GAMMA              = g_pConfigManager->getMaxGamma();
+
+    Debug::log(NONE, "┣ Applying profile from: {}:{}", profile.time.hour.count(), profile.time.minute.count());
+}
+
+int CHyprsunset::currentProfile() {
+    if (profiles.empty())
+        return -1;
+    else if (profiles.size() == 1)
+        return 0;
+
+    auto now = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
+
+    for (size_t i = 0; i < profiles.size(); ++i) {
+        const auto& p = profiles[i];
+
+        auto        time = std::chrono::floor<std::chrono::days>(now) + p.time.hour + p.time.minute;
+
+        if (time >= now) {
+            if (i == 0)
+                return profiles.size() - 1;
+            return i - 1;
+        }
+    }
+
+    return profiles.size() - 1;
+}
+
+void CHyprsunset::schedule() {
+    std::thread([&]() {
+        while (true) {
+            int current = currentProfile();
+            if (current == -1)
+                break;
+
+            SSunsetProfile nextProfile = (size_t)current == profiles.size() - 1 ? profiles[0] : profiles[current + 1];
+
+            auto           now  = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
+            auto           time = std::chrono::floor<std::chrono::days>(now) + nextProfile.time.hour + nextProfile.time.minute;
+
+            if (now >= time)
+                time += std::chrono::days(1);
+
+            auto system_time = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
+
+            std::this_thread::sleep_until(system_time);
+
+            std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
+            KELVIN   = nextProfile.temperature;
+            GAMMA    = nextProfile.gamma;
+            identity = nextProfile.identity;
+
+            Debug::log(NONE, "┣ Switched to new profile from: {}:{}", nextProfile.time.hour.count(), nextProfile.time.minute.count());
+
+            m_sEventLoopInternals.shouldProcess = true;
+            m_sEventLoopInternals.isScheduled   = true;
+            m_sEventLoopInternals.loopSignal.notify_all();
+        };
+    }).detach();
+}
+
+void CHyprsunset::terminate() {
+    m_sEventLoopInternals.shouldProcess = true;
+    m_sEventLoopInternals.loopSignal.notify_all();
+
+    m_bTerminate = true;
 }
