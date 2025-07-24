@@ -6,7 +6,36 @@
 #include <thread>
 #include <chrono>
 #include <sys/poll.h>
+#include <sys/timerfd.h>
 #include <wayland-client-core.h>
+
+#define TIMESPEC_NSEC_PER_SEC 1000000000L
+
+static void registerSignalAction(int sig, void (*handler)(int), int sa_flags = 0) {
+    struct sigaction sa;
+    sa.sa_handler = handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = sa_flags;
+    sigaction(sig, &sa, nullptr);
+}
+
+static void handleExitSignal(int sig) {
+    Debug::log(NONE, "┣ Exiting on user interrupt\n╹");
+    g_pHyprsunset->terminate();
+}
+
+static void timespecAddNs(timespec* pTimespec, int64_t delta) {
+    auto delta_ns_low = delta % TIMESPEC_NSEC_PER_SEC;
+    auto delta_s_high = delta / TIMESPEC_NSEC_PER_SEC;
+
+    pTimespec->tv_sec += delta_s_high;
+
+    pTimespec->tv_nsec += (long)delta_ns_low;
+    if (pTimespec->tv_nsec >= TIMESPEC_NSEC_PER_SEC) {
+        pTimespec->tv_nsec -= TIMESPEC_NSEC_PER_SEC;
+        ++pTimespec->tv_sec;
+    }
+}
 
 // kindly borrowed from https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html
 static Mat3x3 matrixForKelvin(unsigned long long temp) {
@@ -28,17 +57,6 @@ static Mat3x3 matrixForKelvin(unsigned long long temp) {
     }
 
     return std::array<float, 9>{r / 255.F, 0, 0, 0, g / 255.F, 0, 0, 0, b / 255.F};
-}
-
-static void sigHandler(int sig) {
-    if (g_pHyprsunset->state.pCTMMgr) // reset the CTM state...
-        g_pHyprsunset->state.pCTMMgr.reset();
-
-    g_pHyprsunset->terminate();
-
-    Debug::log(NONE, "┣ Exiting on user interrupt\n╹");
-
-    exit(0);
 }
 
 void SOutput::applyCTM(struct SState* state) {
@@ -88,9 +106,6 @@ int CHyprsunset::init() {
         Debug::log(NONE, "✖ Couldn't connect to a wayland compositor", KELVIN);
         return 0;
     }
-
-    signal(SIGINT, sigHandler);
-    signal(SIGTERM, sigHandler);
 
     state.pRegistry = makeShared<CCWlRegistry>((wl_proxy*)wl_display_get_registry(state.wlDisplay));
     state.pRegistry->setGlobal([this](CCWlRegistry* r, uint32_t name, const char* interface, uint32_t version) {
@@ -143,31 +158,54 @@ int CHyprsunset::init() {
     g_pIPCSocket = std::make_unique<CIPCSocket>();
     g_pIPCSocket->initialize();
 
+    registerSignalAction(SIGTERM, ::handleExitSignal);
+    registerSignalAction(SIGINT, ::handleExitSignal);
+
+    state.timerFD = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+
     startEventLoop();
 
     return 1;
 }
 
 void CHyprsunset::startEventLoop() {
-    pollfd      pollfds[] = {{
-             .fd     = wl_display_get_fd(state.wlDisplay),
-             .events = POLLIN,
-    }};
+    pollfd pollfds[] = {
+        {
+            .fd     = wl_display_get_fd(state.wlDisplay),
+            .events = POLLIN,
+        },
+        {
+            .fd     = state.timerFD,
+            .events = POLLIN,
+        },
+    };
 
     std::thread pollThread([&]() {
         while (1) {
-            int ret = poll(pollfds, 1, 5000);
-            if (ret == -1) {
-                Debug::log(CRIT, "[core] Polling fds failed with {}", strerror(errno));
-                terminate();
+            bool preparedToRead = wl_display_prepare_read(state.wlDisplay) == 0;
+            int  ret            = 0;
+
+            if (m_bTerminate)
+                break;
+
+            if (preparedToRead) {
+                ret = poll(pollfds, 2, 5000);
+
+                if (ret < 0) {
+                    RASSERT(errno == EINTR, "[core] Polling fds failed with {}", errno);
+                    wl_display_cancel_read(state.wlDisplay);
+                    continue;
+                }
+
+                for (size_t i = 0; i < 2; ++i) {
+                    RASSERT(!(pollfds[i].revents & POLLHUP), "[core] Disconnected from pollfd id {}", i);
+                }
+
+                wl_display_read_events(state.wlDisplay);
             }
 
-            if (pollfds[0].events & POLLHUP) {
-                Debug::log(CRIT, "[core] Disconnected from pollfd");
-                terminate();
-            }
-
-            if (ret != 0) {
+            if (ret > 0 || !preparedToRead) {
+                Debug::log(TRACE, "[core] got poll event");
                 std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
                 m_sEventLoopInternals.shouldProcess = true;
                 m_sEventLoopInternals.loopSignal.notify_one();
@@ -189,13 +227,8 @@ void CHyprsunset::startEventLoop() {
         m_sEventLoopInternals.shouldProcess = false;
 
         if (pollfds[0].revents & POLLIN) {
+            wl_display_dispatch_pending(state.wlDisplay);
             wl_display_flush(state.wlDisplay);
-            if (wl_display_prepare_read(state.wlDisplay) == 0) {
-                wl_display_read_events(state.wlDisplay);
-                wl_display_dispatch_pending(state.wlDisplay);
-            } else {
-                wl_display_dispatch(state.wlDisplay);
-            }
         }
 
         if (m_sEventLoopInternals.isScheduled)
@@ -206,14 +239,31 @@ void CHyprsunset::startEventLoop() {
         m_sEventLoopInternals.isScheduled = false;
     }
 
-    wl_display_disconnect(state.wlDisplay);
+    Debug::log(TRACE, "Exiting loop");
+    m_bTerminate = true;
+
+    // cleanup wl resources
+    state.outputs.clear();
+    state.pRegistry.reset();
+    state.pCTMMgr.reset();
+
+    timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    timespecAddNs(&now, 1000L * 1000L * 100L);
+
+    itimerspec ts = {.it_value = now};
+
+    timerfd_settime(state.timerFD, TFD_TIMER_ABSTIME, &ts, nullptr);
+
     pollThread.join();
+
+    wl_display_disconnect(state.wlDisplay);
+    close(state.timerFD);
 }
 
 void CHyprsunset::tick() {
-    if (g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest()) {
+    if (g_pIPCSocket && g_pIPCSocket->mainThreadParseRequest())
         reload();
-    }
 }
 
 void CHyprsunset::reload() {

@@ -28,6 +28,7 @@ struct SState {
     std::vector<SP<SOutput>>          outputs;
     bool                              initialized = false;
     Mat3x3                            ctm;
+    int                               timerFD = -1;
 };
 
 struct SSunsetProfile {
