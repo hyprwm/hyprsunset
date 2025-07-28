@@ -163,6 +163,7 @@ int CHyprsunset::init() {
 
     state.timerFD = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
 
+    schedule();
     startEventLoop();
 
     return 1;
