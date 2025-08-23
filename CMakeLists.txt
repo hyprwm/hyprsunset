@@ -140,4 +140,10 @@ endif()
 include(GNUInstallDirs)
 
 install(TARGETS hyprsunset)
-install(FILES ${CMAKE_BINARY_DIR}/systemd/hyprsunset.service DESTINATION ${CMAKE_INSTALL_LIBDIR}/systemd/user)
+
+pkg_get_variable(SYSTEMD_USER_UNIT_DIR systemd systemduserunitdir)
+if (NOT SYSTEMD_USER_UNIT_DIR)
+  set(SYSTEMD_USER_UNIT_DIR "${CMAKE_INSTALL_PREFIX}/lib/systemd/user")
+endif()
+
+install(FILES ${CMAKE_BINARY_DIR}/systemd/hyprsunset.service DESTINATION "${SYSTEMD_USER_UNIT_DIR}")
