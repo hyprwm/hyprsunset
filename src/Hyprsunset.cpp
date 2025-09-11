@@ -347,17 +347,23 @@ void CHyprsunset::schedule() {
             
             while (time >= std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time() + std::chrono::minutes(1))
                 std::this_thread::sleep_for(std::chrono::minutes(1));
-
+            
             auto system_time = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
 
             std::this_thread::sleep_until(system_time);
 
-            std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
-            KELVIN   = nextProfile.temperature;
-            GAMMA    = nextProfile.gamma;
-            identity = nextProfile.identity;
+            int newcurrent = currentProfile();
+            if (newcurrent == -1)
+                break;
 
-            Debug::log(NONE, "┣ Switched to new profile from: {}:{}", nextProfile.time.hour.count(), nextProfile.time.minute.count());
+            SSunsetProfile newProfile = profiles[newcurrent];
+
+            std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
+            KELVIN   = newProfile.temperature;
+            GAMMA    = newProfile.gamma;
+            identity = newProfile.identity;
+
+            Debug::log(NONE, "┣ Switched to new profile from: {}:{}", newProfile.time.hour.count(), newProfile.time.minute.count());
 
             m_sEventLoopInternals.shouldProcess = true;
             m_sEventLoopInternals.isScheduled   = true;
