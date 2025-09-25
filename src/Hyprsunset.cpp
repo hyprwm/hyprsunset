@@ -149,7 +149,7 @@ int CHyprsunset::init() {
         return 0;
     }
 
-    Debug::log(NONE, "┣ Found {} outputs, applying CTMs", state.outputs.size());
+    Debug::log(NONE, "┣ Found {} output(s), applying CTMs", state.outputs.size());
 
     reload();
 
