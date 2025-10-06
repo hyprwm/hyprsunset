@@ -3,6 +3,7 @@
 #include "Hyprsunset.hpp"
 #include <hyprlang.hpp>
 #include <vector>
+#include <set>
 
 class CConfigManager {
   public:
@@ -13,10 +14,13 @@ class CConfigManager {
 
     void                        init();
 
-  private:
-    Hyprlang::CConfig m_config;
+    std::optional<std::string>  handleSource(const std::string&, const std::string&);
 
-    std::string       currentConfigPath;
+  private:
+    Hyprlang::CConfig           m_config;
+
+    std::string                 currentConfigPath;
+    std::set<std::string>       alreadyIncludedSourceFiles;
 };
 
 inline UP<CConfigManager> g_pConfigManager;
