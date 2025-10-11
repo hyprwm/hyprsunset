@@ -330,6 +330,10 @@ int CHyprsunset::currentProfile() {
     return profiles.size() - 1;
 }
 
+SSunsetProfile CHyprsunset::getCurrentProfile() {
+    return profiles[currentProfile()];
+}
+
 void CHyprsunset::schedule() {
     std::thread([&]() {
         while (true) {
@@ -344,10 +348,10 @@ void CHyprsunset::schedule() {
 
             if (now >= time)
                 time += std::chrono::days(1);
-            
+
             while (time >= std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time() + std::chrono::minutes(1))
                 std::this_thread::sleep_for(std::chrono::minutes(1));
-            
+
             auto system_time = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
 
             std::this_thread::sleep_until(system_time);
@@ -356,7 +360,7 @@ void CHyprsunset::schedule() {
             if (newcurrent == -1)
                 break;
 
-            SSunsetProfile newProfile = profiles[newcurrent];
+            SSunsetProfile              newProfile = profiles[newcurrent];
 
             std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
             KELVIN   = newProfile.temperature;
