@@ -55,6 +55,7 @@ class CHyprsunset {
     int                init();
     void               tick();
     void               loadCurrentProfile();
+    SSunsetProfile     getCurrentProfile();
     void               terminate();
 
     struct {

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -177,6 +178,20 @@ bool CIPCSocket::mainThreadParseRequest() {
 
     if (copy.find("identity") == 0) {
         g_pHyprsunset->identity = true;
+        return true;
+    }
+
+    if (copy.find("profile") == 0) {
+        SSunsetProfile profile = g_pHyprsunset->getCurrentProfile();
+
+        int            hrs   = profile.time.hour.count();
+        int            mins  = profile.time.minute.count();
+        auto           temp  = profile.temperature;
+        float          gamma = profile.gamma;
+        bool           ident = profile.identity;
+
+        m_szReply = std::format("Time: {:0>2}:{:0>2}\nTemperature: {}\nGamma: {}\nIdentity: {}", hrs, mins, temp, gamma, ident);
+
         return true;
     }
 
