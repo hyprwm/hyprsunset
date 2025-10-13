@@ -180,6 +180,34 @@ bool CIPCSocket::mainThreadParseRequest() {
         return true;
     }
 
+    if (copy.find("reset") == 0) {
+        int spaceSeparator = copy.find_first_of(' ');
+
+        // Reset whole profile
+        if (spaceSeparator == -1) {
+            g_pHyprsunset->loadCurrentProfile();
+            return true;
+        }
+
+        SSunsetProfile profile = g_pHyprsunset->getCurrentProfile();
+
+        std::string    args = copy.substr(spaceSeparator + 1);
+
+        if (args == "temperature") {
+            g_pHyprsunset->KELVIN = profile.temperature;
+            return true;
+        } else if (args == "gamma") {
+            g_pHyprsunset->GAMMA = profile.gamma;
+            return true;
+        } else if (args == "identity") {
+            g_pHyprsunset->identity = profile.identity;
+            return true;
+        } else {
+            m_szReply = "Invalid reset value (should be either temperature, gamma or identity)";
+            return false;
+        }
+    }
+
     m_szReply = "invalid command";
     return false;
 }
