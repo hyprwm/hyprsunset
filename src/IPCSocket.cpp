@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -206,6 +207,20 @@ bool CIPCSocket::mainThreadParseRequest() {
             m_szReply = "Invalid reset value (should be either temperature, gamma or identity)";
             return false;
         }
+    }
+  
+    if (copy.find("profile") == 0) {
+        SSunsetProfile profile = g_pHyprsunset->getCurrentProfile();
+
+        int            hrs   = profile.time.hour.count();
+        int            mins  = profile.time.minute.count();
+        auto           temp  = profile.temperature;
+        float          gamma = profile.gamma;
+        bool           ident = profile.identity;
+
+        m_szReply = std::format("Time: {:0>2}:{:0>2}\nTemperature: {}\nGamma: {}\nIdentity: {}", hrs, mins, temp, gamma, ident);
+
+        return true;
     }
 
     m_szReply = "invalid command";
