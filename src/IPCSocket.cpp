@@ -183,7 +183,7 @@ bool CIPCSocket::mainThreadParseRequest() {
         }
 
         std::string args = copy.substr(spaceSeparator + 1);
-        if (args == "?") {
+        if (args == "get") {
             m_szReply = g_pHyprsunset->identity ? "true" : "false";
             return false;
         } else if (args == "true") {
