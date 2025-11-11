@@ -120,20 +120,19 @@ bool CIPCSocket::mainThreadParseRequest() {
         std::string args     = copy.substr(spaceSeparator + 1);
         float       gamma    = g_pHyprsunset->GAMMA * 100;
         float       maxGamma = g_pHyprsunset->MAX_GAMMA * 100;
-        if (args[0] == '+' || args[0] == '-') {
-            try {
+        try {
+            if (args[0] == '+' || args[0] == '-') {
                 if (args[0] == '-')
                     gamma -= std::stof(args.substr(1));
                 else
                     gamma += std::stof(args.substr(1));
-            } catch (std::exception& e) {
-                m_szReply = "Invalid gamma value (should be in range 0-" + std::to_string(maxGamma) + "%)";
-                return false;
-            }
-
-            gamma = std::clamp(gamma, 0.0f, maxGamma);
-        } else
-            gamma = std::stof(args);
+                gamma = std::clamp(gamma, 0.0f, maxGamma);
+            } else
+                gamma = std::stof(args);
+        } catch (std::exception& e) {
+            m_szReply = "Invalid gamma value (should be in range 0-" + std::to_string(maxGamma) + "%)";
+            return false;
+        }
 
         if (gamma < 0 || gamma > maxGamma) {
             m_szReply = "Invalid gamma value (should be in range 0-" + std::to_string(maxGamma) + "%)";
@@ -226,7 +225,7 @@ bool CIPCSocket::mainThreadParseRequest() {
             return false;
         }
     }
-  
+
     if (copy.find("profile") == 0) {
         SSunsetProfile profile = g_pHyprsunset->getCurrentProfile();
 
