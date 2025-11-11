@@ -177,8 +177,26 @@ bool CIPCSocket::mainThreadParseRequest() {
     }
 
     if (copy.find("identity") == 0) {
-        g_pHyprsunset->identity = true;
-        return true;
+        int spaceSeparator = copy.find_first_of(' ');
+        if (spaceSeparator == -1) {
+            g_pHyprsunset->identity = true;
+            return true;
+        }
+
+        std::string args = copy.substr(spaceSeparator + 1);
+        if (args == "get") {
+            m_szReply = g_pHyprsunset->identity ? "true" : "false";
+            return false;
+        } else if (args == "true") {
+            g_pHyprsunset->identity = true;
+            return true;
+        } else if (args == "false") {
+            g_pHyprsunset->identity = false;
+            return true;
+        } else {
+            m_szReply = "Invalid identity value (should be true or false)";
+            return false;
+        }
     }
 
     if (copy.find("reset") == 0) {
