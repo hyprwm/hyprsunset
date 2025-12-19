@@ -280,7 +280,8 @@ void CHyprsunset::reload() {
 }
 
 void CHyprsunset::loadCurrentProfile() {
-    profiles = g_pConfigManager->getSunsetProfiles();
+    profiles  = g_pConfigManager->getSunsetProfiles();
+    MAX_GAMMA = g_pConfigManager->getMaxGamma();
 
     Debug::log(NONE, "┣ Loaded {} profiles", profiles.size());
 
@@ -302,7 +303,6 @@ void CHyprsunset::loadCurrentProfile() {
     KELVIN                 = profile.temperature;
     GAMMA                  = profile.gamma;
     identity               = profile.identity;
-    MAX_GAMMA              = g_pConfigManager->getMaxGamma();
 
     Debug::log(NONE, "┣ Applying profile from: {}:{}", profile.time.hour.count(), profile.time.minute.count());
 }
