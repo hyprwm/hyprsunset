@@ -207,37 +207,43 @@ bool CIPCSocket::mainThreadParseRequest() {
             return true;
         }
 
-        SSunsetProfile profile = g_pHyprsunset->getCurrentProfile();
+        if (auto profileOpt = g_pHyprsunset->getCurrentProfile()) {
+            auto        profile = profileOpt.value();
+            std::string args    = copy.substr(spaceSeparator + 1);
 
-        std::string    args = copy.substr(spaceSeparator + 1);
-
-        if (args == "temperature") {
-            g_pHyprsunset->KELVIN = profile.temperature;
-            return true;
-        } else if (args == "gamma") {
-            g_pHyprsunset->GAMMA = profile.gamma;
-            return true;
-        } else if (args == "identity") {
-            g_pHyprsunset->identity = profile.identity;
-            return true;
-        } else {
-            m_szReply = "Invalid reset value (should be either temperature, gamma or identity)";
-            return false;
+            if (args == "temperature") {
+                g_pHyprsunset->KELVIN = profile.temperature;
+                return true;
+            } else if (args == "gamma") {
+                g_pHyprsunset->GAMMA = profile.gamma;
+                return true;
+            } else if (args == "identity") {
+                g_pHyprsunset->identity = profile.identity;
+                return true;
+            } else {
+                m_szReply = "Invalid reset value (should be either temperature, gamma or identity)";
+                return false;
+            }
         }
+        m_szReply = "No profile is currently loaded";
+        return false;
     }
 
     if (copy.find("profile") == 0) {
-        SSunsetProfile profile = g_pHyprsunset->getCurrentProfile();
+        if (auto profileOpt = g_pHyprsunset->getCurrentProfile()) {
+            auto  profile = profileOpt.value();
 
-        int            hrs   = profile.time.hour.count();
-        int            mins  = profile.time.minute.count();
-        auto           temp  = profile.temperature;
-        float          gamma = profile.gamma;
-        bool           ident = profile.identity;
+            int   hrs   = profile.time.hour.count();
+            int   mins  = profile.time.minute.count();
+            auto  temp  = profile.temperature;
+            float gamma = profile.gamma;
+            bool  ident = profile.identity;
 
-        m_szReply = std::format("Time: {:0>2}:{:0>2}\nTemperature: {}\nGamma: {}\nIdentity: {}", hrs, mins, temp, gamma, ident);
-
-        return true;
+            m_szReply = std::format("Time: {:0>2}:{:0>2}\nTemperature: {}\nGamma: {}\nIdentity: {}", hrs, mins, temp, gamma, ident);
+            return true;
+        }
+        m_szReply = "No profile is currently loaded";
+        return false;
     }
 
     m_szReply = "invalid command";

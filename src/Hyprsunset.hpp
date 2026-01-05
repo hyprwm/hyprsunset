@@ -3,6 +3,7 @@
 #include <wayland-client.h>
 #include <vector>
 #include <mutex>
+#include <optional>
 #include <condition_variable>
 #include "protocols/hyprland-ctm-control-v1.hpp"
 #include "protocols/wayland.hpp"
@@ -44,19 +45,19 @@ struct SSunsetProfile {
 
 class CHyprsunset {
   public:
-    float              MAX_GAMMA = 1.0f; // default
-    float              GAMMA     = 1.0f; // default
-    unsigned long long KELVIN    = 6000; // default
-    bool               kelvinSet = false, identity = false;
-    SState             state;
-    bool               m_bTerminate = false;
+    float                         MAX_GAMMA = 1.0f; // default
+    float                         GAMMA     = 1.0f; // default
+    unsigned long long            KELVIN    = 6000; // default
+    bool                          kelvinSet = false, identity = false;
+    SState                        state;
+    bool                          m_bTerminate = false;
 
-    int                calculateMatrix();
-    int                init();
-    void               tick();
-    void               loadCurrentProfile();
-    SSunsetProfile     getCurrentProfile();
-    void               terminate();
+    int                           calculateMatrix();
+    int                           init();
+    void                          tick();
+    void                          loadCurrentProfile();
+    std::optional<SSunsetProfile> getCurrentProfile();
+    void                          terminate();
 
     struct {
         std::condition_variable loopSignal;
