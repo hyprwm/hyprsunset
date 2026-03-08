@@ -6,6 +6,7 @@
 #include <optional>
 #include <thread>
 #include <chrono>
+#include <ctime>
 #include <sys/poll.h>
 #include <sys/timerfd.h>
 #include <wayland-client-core.h>
@@ -23,6 +24,12 @@ static void registerSignalAction(int sig, void (*handler)(int), int sa_flags = 0
 static void handleExitSignal(int sig) {
     Debug::log(NONE, "┣ Exiting on user interrupt\n╹");
     g_pHyprsunset->terminate();
+}
+
+static std::tm getLocalTime(std::time_t time) {
+    std::tm result = {};
+    localtime_r(&time, &result);
+    return result;
 }
 
 static void timespecAddNs(timespec* pTimespec, int64_t delta) {
@@ -314,14 +321,17 @@ int CHyprsunset::currentProfile() {
     else if (profiles.size() == 1)
         return 0;
 
-    auto now = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
+    const auto now          = std::chrono::system_clock::now();
+    const auto nowTime      = std::chrono::system_clock::to_time_t(now);
+    const auto localNow     = getLocalTime(nowTime);
+    const auto minutesOfDay = localNow.tm_hour * 60 + localNow.tm_min;
 
     for (size_t i = 0; i < profiles.size(); ++i) {
         const auto& p = profiles[i];
 
-        auto        time = std::chrono::floor<std::chrono::days>(now) + p.time.hour + p.time.minute;
+        const auto  time = p.time.hour.count() * 60 + p.time.minute.count();
 
-        if (time >= now) {
+        if (time >= minutesOfDay) {
             if (i == 0)
                 return profiles.size() - 1;
             return i - 1;
@@ -348,18 +358,24 @@ void CHyprsunset::schedule() {
 
             SSunsetProfile nextProfile = (size_t)current == profiles.size() - 1 ? profiles[0] : profiles[current + 1];
 
-            auto           now  = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
-            auto           time = std::chrono::floor<std::chrono::days>(now) + nextProfile.time.hour + nextProfile.time.minute;
+            auto           now         = std::chrono::system_clock::now();
+            auto           nowTime     = std::chrono::system_clock::to_time_t(now);
+            auto           triggerTm   = getLocalTime(nowTime);
+            triggerTm.tm_hour          = nextProfile.time.hour.count();
+            triggerTm.tm_min           = nextProfile.time.minute.count();
+            triggerTm.tm_sec           = 0;
+            triggerTm.tm_isdst         = -1;
+            auto           triggerTime = std::mktime(&triggerTm);
 
-            if (now >= time)
-                time += std::chrono::days(1);
+            if (triggerTime <= nowTime) {
+                triggerTm.tm_mday += 1;
+                triggerTime = std::mktime(&triggerTm);
+            }
 
-            while (time >= std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time() + std::chrono::minutes(1))
+            while (triggerTime >= std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + std::chrono::minutes(1).count())
                 std::this_thread::sleep_for(std::chrono::minutes(1));
 
-            auto system_time = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
-
-            std::this_thread::sleep_until(system_time);
+            std::this_thread::sleep_until(std::chrono::system_clock::from_time_t(triggerTime));
 
             int newcurrent = currentProfile();
             if (newcurrent == -1)
