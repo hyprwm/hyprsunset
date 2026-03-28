@@ -26,6 +26,12 @@ void CConfigManager::init() {
     m_config.addSpecialConfigValue("profile", "gamma", Hyprlang::FLOAT{1.0f});
     m_config.addSpecialConfigValue("profile", "identity", Hyprlang::INT{0});
 
+    m_config.addSpecialCategory("output", Hyprlang::SSpecialCategoryOptions{.key = "name"});
+    m_config.addSpecialConfigValue("output", "name", Hyprlang::STRING{""});
+    m_config.addSpecialConfigValue("output", "temperature", Hyprlang::INT{6000});
+    m_config.addSpecialConfigValue("output", "gamma", Hyprlang::FLOAT{1.0f});
+    m_config.addSpecialConfigValue("output", "identity", Hyprlang::INT{0});
+
     m_config.commence();
 
     auto result = m_config.parse();
@@ -84,6 +90,45 @@ std::vector<SSunsetProfile> CConfigManager::getSunsetProfiles() {
             .identity    = identity,
         });
         // clang-format on
+    }
+
+    return result;
+}
+
+std::vector<SOutputOverride> CConfigManager::getOutputOverrides() {
+    std::vector<SOutputOverride> result;
+
+    auto                         keys = m_config.listKeysForSpecialCategory("output");
+    result.reserve(keys.size());
+
+    for (auto& key : keys) {
+        std::string   name;
+        unsigned long temperature;
+        float         gamma;
+        bool          identity;
+
+        try {
+            name        = std::any_cast<Hyprlang::STRING>(m_config.getSpecialConfigValue("output", "name", key.c_str()));
+            temperature = std::any_cast<Hyprlang::INT>(m_config.getSpecialConfigValue("output", "temperature", key.c_str()));
+            gamma       = std::any_cast<Hyprlang::FLOAT>(m_config.getSpecialConfigValue("output", "gamma", key.c_str()));
+            identity    = std::any_cast<Hyprlang::INT>(m_config.getSpecialConfigValue("output", "identity", key.c_str()));
+        } catch (const std::bad_any_cast& e) {
+            RASSERT(false, "Failed to construct Output override: {}", e.what());
+        } catch (const std::out_of_range& e) {
+            RASSERT(false, "Missing property for Output override: {}", e.what());
+        }
+
+        if (name.empty()) {
+            Debug::log(ERR, "Output override missing name, skipping");
+            continue;
+        }
+
+        result.push_back(SOutputOverride{
+            .name        = name,
+            .temperature = temperature,
+            .gamma       = gamma,
+            .identity    = identity,
+        });
     }
 
     return result;

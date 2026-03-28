@@ -60,8 +60,14 @@ static Mat3x3 matrixForKelvin(unsigned long long temp) {
     return std::array<float, 9>{r / 255.F, 0, 0, 0, g / 255.F, 0, 0, 0, b / 255.F};
 }
 
-void SOutput::applyCTM(struct SState* state) {
-    auto arr = state->ctm.getMatrix();
+static Mat3x3 matrixForOverride(const SOutputOverride& ov) {
+    Mat3x3 ctm = ov.identity ? Mat3x3::identity() : matrixForKelvin(ov.temperature);
+    ctm.multiply(std::array<float, 9>{ov.gamma, 0, 0, 0, ov.gamma, 0, 0, 0, ov.gamma});
+    return ctm;
+}
+
+void SOutput::applyCTM(struct SState* state, const Mat3x3& ctm) {
+    auto arr = ctm.getMatrix();
     state->pCTMMgr->sendSetCtmForOutput(output->resource(), wl_fixed_from_double(arr[0]), wl_fixed_from_double(arr[1]), wl_fixed_from_double(arr[2]), wl_fixed_from_double(arr[3]),
                                         wl_fixed_from_double(arr[4]), wl_fixed_from_double(arr[5]), wl_fixed_from_double(arr[6]), wl_fixed_from_double(arr[7]),
                                         wl_fixed_from_double(arr[8]));
@@ -131,11 +137,14 @@ int CHyprsunset::init() {
 
             Debug::log(NONE, "┣ Found new output with ID {}, binding", name);
             auto o = state.outputs.emplace_back(
-                makeShared<SOutput>(makeShared<CCWlOutput>((wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &wl_output_interface, 3)), name));
+                makeShared<SOutput>(makeShared<CCWlOutput>((wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &wl_output_interface, 4)), name));
+
+            o->output->setName([o](CCWlOutput*, const char* outputName) { o->name = outputName; });
 
             if (state.initialized) {
                 Debug::log(NONE, "┣ already initialized, applying CTM instantly");
-                o->applyCTM(&state);
+                auto it = std::find_if(outputOverrides.begin(), outputOverrides.end(), [&o](const auto& ov) { return ov.name == o->name; });
+                o->applyCTM(&state, it != outputOverrides.end() ? matrixForOverride(*it) : state.ctm);
                 commitCTMs();
             }
         }
@@ -144,6 +153,7 @@ int CHyprsunset::init() {
     state.pRegistry->setGlobalRemove([this](CCWlRegistry* r, uint32_t name) { std::erase_if(state.outputs, [name](const auto& e) { return e->id == name; }); });
 
     wl_display_roundtrip(state.wlDisplay);
+    wl_display_roundtrip(state.wlDisplay); // second roundtrip to receive output name events
 
     if (!state.pCTMMgr) {
         Debug::log(NONE, "✖ Compositor doesn't support hyprland-ctm-control-v1, are you running on Hyprland?");
@@ -272,7 +282,13 @@ void CHyprsunset::reload() {
     calculateMatrix();
 
     for (auto& o : state.outputs) {
-        o->applyCTM(&state);
+        auto it = std::find_if(outputOverrides.begin(), outputOverrides.end(), [&o](const auto& ov) { return ov.name == o->name; });
+        if (it != outputOverrides.end()) {
+            Debug::log(NONE, "┣ Applying override for output {}", o->name);
+            o->applyCTM(&state, matrixForOverride(*it));
+        } else {
+            o->applyCTM(&state, state.ctm);
+        }
     }
 
     commitCTMs();
@@ -281,8 +297,9 @@ void CHyprsunset::reload() {
 }
 
 void CHyprsunset::loadCurrentProfile() {
-    profiles  = g_pConfigManager->getSunsetProfiles();
-    MAX_GAMMA = g_pConfigManager->getMaxGamma();
+    profiles        = g_pConfigManager->getSunsetProfiles();
+    outputOverrides = g_pConfigManager->getOutputOverrides();
+    MAX_GAMMA       = g_pConfigManager->getMaxGamma();
 
     Debug::log(NONE, "┣ Loaded {} profiles", profiles.size());
 
