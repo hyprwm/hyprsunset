@@ -113,7 +113,9 @@ bool CIPCSocket::mainThreadParseRequest() {
     if (copy.find("gamma") == 0) {
         int spaceSeparator = copy.find_first_of(' ');
         if (spaceSeparator == -1) {
-            m_szReply = std::to_string(g_pHyprsunset->GAMMA * 100);
+            auto  profile = g_pHyprsunset->m_manualOverride ? std::optional<SSunsetProfile>{} : g_pHyprsunset->getCurrentProfile();
+            float g       = profile ? profile->gamma : g_pHyprsunset->GAMMA;
+            m_szReply     = std::to_string(g * 100);
             return false;
         }
 
@@ -139,14 +141,17 @@ bool CIPCSocket::mainThreadParseRequest() {
             return false;
         }
 
-        g_pHyprsunset->GAMMA = gamma / 100;
+        g_pHyprsunset->GAMMA           = gamma / 100;
+        g_pHyprsunset->m_manualOverride = true;
         return true;
     }
 
     if (copy.find("temperature") == 0) {
         int spaceSeparator = copy.find_first_of(' ');
         if (spaceSeparator == -1) {
-            m_szReply = std::to_string(g_pHyprsunset->KELVIN);
+            auto               profile = g_pHyprsunset->m_manualOverride ? std::optional<SSunsetProfile>{} : g_pHyprsunset->getCurrentProfile();
+            unsigned long long k       = profile ? profile->temperature : g_pHyprsunset->KELVIN;
+            m_szReply                  = std::to_string(k);
             return false;
         }
 
@@ -170,27 +175,33 @@ bool CIPCSocket::mainThreadParseRequest() {
             return false;
         }
 
-        g_pHyprsunset->KELVIN   = kelvin;
-        g_pHyprsunset->identity = false;
+        g_pHyprsunset->KELVIN          = kelvin;
+        g_pHyprsunset->identity        = false;
+        g_pHyprsunset->m_manualOverride = true;
         return true;
     }
 
     if (copy.find("identity") == 0) {
         int spaceSeparator = copy.find_first_of(' ');
         if (spaceSeparator == -1) {
-            g_pHyprsunset->identity = true;
+            g_pHyprsunset->identity         = true;
+            g_pHyprsunset->m_manualOverride = true;
             return true;
         }
 
         std::string args = copy.substr(spaceSeparator + 1);
         if (args == "get") {
-            m_szReply = g_pHyprsunset->identity ? "true" : "false";
+            auto profile = g_pHyprsunset->m_manualOverride ? std::optional<SSunsetProfile>{} : g_pHyprsunset->getCurrentProfile();
+            bool i       = profile ? profile->identity : g_pHyprsunset->identity;
+            m_szReply    = i ? "true" : "false";
             return false;
         } else if (args == "true") {
-            g_pHyprsunset->identity = true;
+            g_pHyprsunset->identity         = true;
+            g_pHyprsunset->m_manualOverride = true;
             return true;
         } else if (args == "false") {
-            g_pHyprsunset->identity = false;
+            g_pHyprsunset->identity         = false;
+            g_pHyprsunset->m_manualOverride = true;
             return true;
         } else {
             m_szReply = "Invalid identity value (should be true or false)";
@@ -212,13 +223,16 @@ bool CIPCSocket::mainThreadParseRequest() {
             std::string args    = copy.substr(spaceSeparator + 1);
 
             if (args == "temperature") {
-                g_pHyprsunset->KELVIN = profile.temperature;
+                g_pHyprsunset->KELVIN          = profile.temperature;
+                g_pHyprsunset->m_manualOverride = true;
                 return true;
             } else if (args == "gamma") {
-                g_pHyprsunset->GAMMA = profile.gamma;
+                g_pHyprsunset->GAMMA           = profile.gamma;
+                g_pHyprsunset->m_manualOverride = true;
                 return true;
             } else if (args == "identity") {
-                g_pHyprsunset->identity = profile.identity;
+                g_pHyprsunset->identity        = profile.identity;
+                g_pHyprsunset->m_manualOverride = true;
                 return true;
             } else {
                 m_szReply = "Invalid reset value (should be either temperature, gamma or identity)";
