@@ -133,6 +133,16 @@ if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
       "${CMAKE_SHARED_LINKER_FLAGS} -pg -no-pie -fno-builtin")
 endif(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
 
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles([[
+  #include <chrono>
+  int main() { std::chrono::zoned_time{}; }
+]] HAVE_STD_ZONED_TIME)
+
+if (NOT HAVE_STD_ZONED_TIME)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-library")
+endif()
+
 if(NOT DEFINED CMAKE_INSTALL_MANDIR)
     set(CMAKE_INSTALL_MANDIR "${CMAKE_INSTALL_PREFIX}/share/man")
 endif()

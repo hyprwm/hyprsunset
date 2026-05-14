@@ -1,6 +1,7 @@
 #include "ConfigManager.hpp"
 #include "helpers/Log.hpp"
 #include "IPCSocket.hpp"
+#include <algorithm>
 #include <cstring>
 #include <mutex>
 #include <optional>
@@ -8,6 +9,7 @@
 #include <chrono>
 #include <sys/poll.h>
 #include <sys/timerfd.h>
+#include <unistd.h>
 #include <wayland-client-core.h>
 
 #define TIMESPEC_NSEC_PER_SEC 1000000000L
