@@ -28,7 +28,7 @@ namespace Debug {
 
     template <typename... Args>
     void log(LogLevel level, std::format_string<Args...> fmt, Args&&... args) {
-        if (!trace && (level == LOG || level == INFO))
+        if (!trace && (level == LOG || level == INFO || level == TRACE))
             return;
 
         switch (level) {
