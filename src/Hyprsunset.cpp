@@ -184,6 +184,8 @@ void CHyprsunset::startEventLoop() {
         },
     };
 
+    bool wlEventsPending = false;
+
     std::thread pollThread([&]() {
         while (1) {
             bool preparedToRead = wl_display_prepare_read(state.wlDisplay) == 0;
@@ -212,6 +214,8 @@ void CHyprsunset::startEventLoop() {
                 Debug::log(TRACE, "[core] got poll event");
                 std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
                 m_sEventLoopInternals.shouldProcess = true;
+                if (!preparedToRead || (pollfds[0].revents & POLLIN))
+                    wlEventsPending = true;
                 m_sEventLoopInternals.loopSignal.notify_one();
             }
         }
@@ -230,7 +234,8 @@ void CHyprsunset::startEventLoop() {
 
         m_sEventLoopInternals.shouldProcess = false;
 
-        if (pollfds[0].revents & POLLIN) {
+        if (wlEventsPending) {
+            wlEventsPending = false;
             wl_display_dispatch_pending(state.wlDisplay);
             wl_display_flush(state.wlDisplay);
         }
