@@ -19,7 +19,8 @@ using namespace Hyprutils::Memory;
 struct SOutput {
     SP<CCWlOutput> output;
     uint32_t       id = 0;
-    void           applyCTM(struct SState*);
+    std::string    name;
+    void           applyCTM(struct SState*, const Mat3x3& ctm);
 };
 
 struct SState {
@@ -41,6 +42,7 @@ struct SSunsetProfile {
     unsigned long temperature = 6000;
     float         gamma       = 1.0f;
     bool          identity    = false;
+    std::string   monitor;
 };
 
 class CHyprsunset {
@@ -50,13 +52,16 @@ class CHyprsunset {
     unsigned long long            KELVIN    = 6000; // default
     bool                          kelvinSet = false, identity = false;
     SState                        state;
-    bool                          m_bTerminate = false;
+    bool                          m_bTerminate        = false;
+    bool                          m_outputV4Supported = false;
+    bool                          m_manualOverride    = false;
 
     int                           calculateMatrix();
     int                           init();
     void                          tick();
     void                          loadCurrentProfile();
     std::optional<SSunsetProfile> getCurrentProfile();
+    std::optional<SSunsetProfile> getProfileForOutput(const std::string& outputName);
     void                          terminate();
 
     struct {
@@ -69,13 +74,13 @@ class CHyprsunset {
     } m_sEventLoopInternals;
 
   private:
-    static void                 commitCTMs();
-    void                        reload();
-    void                        schedule();
-    int                         currentProfile();
-    void                        startEventLoop();
+    static void                   commitCTMs();
+    void                          reload();
+    void                          schedule();
+    std::optional<SSunsetProfile> pickProfileByTime(const std::vector<const SSunsetProfile*>& sortedProfiles);
+    void                          startEventLoop();
 
-    std::vector<SSunsetProfile> profiles;
+    std::vector<SSunsetProfile>   profiles;
 };
 
 inline std::unique_ptr<CHyprsunset> g_pHyprsunset;

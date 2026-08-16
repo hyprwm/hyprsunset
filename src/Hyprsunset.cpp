@@ -5,6 +5,7 @@
 #include <cstring>
 #include <mutex>
 #include <optional>
+#include <ranges>
 #include <thread>
 #include <chrono>
 #include <sys/poll.h>
@@ -62,8 +63,14 @@ static Mat3x3 matrixForKelvin(unsigned long long temp) {
     return std::array<float, 9>{r / 255.F, 0, 0, 0, g / 255.F, 0, 0, 0, b / 255.F};
 }
 
-void SOutput::applyCTM(struct SState* state) {
-    auto arr = state->ctm.getMatrix();
+static Mat3x3 matrixForProfile(const SSunsetProfile& p) {
+    Mat3x3 ctm = p.identity ? Mat3x3::identity() : matrixForKelvin(p.temperature);
+    ctm.multiply(std::array<float, 9>{p.gamma, 0, 0, 0, p.gamma, 0, 0, 0, p.gamma});
+    return ctm;
+}
+
+void SOutput::applyCTM(struct SState* state, const Mat3x3& ctm) {
+    auto arr = ctm.getMatrix();
     state->pCTMMgr->sendSetCtmForOutput(output->resource(), wl_fixed_from_double(arr[0]), wl_fixed_from_double(arr[1]), wl_fixed_from_double(arr[2]), wl_fixed_from_double(arr[3]),
                                         wl_fixed_from_double(arr[4]), wl_fixed_from_double(arr[5]), wl_fixed_from_double(arr[6]), wl_fixed_from_double(arr[7]),
                                         wl_fixed_from_double(arr[8]));
@@ -128,16 +135,34 @@ int CHyprsunset::init() {
                 });
             }
         } else if (IFACE == wl_output_interface.name) {
-            if (std::find_if(state.outputs.begin(), state.outputs.end(), [name](const auto& el) { return el->id == name; }) != state.outputs.end())
+            if (std::ranges::find_if(state.outputs, [name](const auto& el) { return el->id == name; }) != state.outputs.end())
                 return;
 
-            Debug::log(NONE, "┣ Found new output with ID {}, binding", name);
+            auto       targetVersion = std::min(version, 4u);
+            const bool firstOutput   = state.outputs.empty();
+
+            if (firstOutput) {
+                m_outputV4Supported = (targetVersion >= 4);
+                if (!m_outputV4Supported)
+                    Debug::log(NONE, "┣ Compositor offers wl_output v{} only — `monitor` profile fields will be ignored", version);
+            }
+
+            Debug::log(NONE, "┣ Found new output with ID {}, binding to v{}", name, targetVersion);
             auto o = state.outputs.emplace_back(
-                makeShared<SOutput>(makeShared<CCWlOutput>((wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &wl_output_interface, 3)), name));
+                makeShared<SOutput>(makeShared<CCWlOutput>((wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &wl_output_interface, targetVersion)), name));
+
+            if (targetVersion >= 4)
+                o->output->setName([weakOutput = WP<SOutput>(o)](CCWlOutput*, const char* outputName) {
+                    if (auto so = weakOutput.lock()) {
+                        so->name = outputName ? outputName : "";
+                        Debug::log(NONE, "┣ Output {} is named {}", so->id, so->name);
+                    }
+                });
 
             if (state.initialized) {
                 Debug::log(NONE, "┣ already initialized, applying CTM instantly");
-                o->applyCTM(&state);
+                auto profile = getProfileForOutput(o->name);
+                o->applyCTM(&state, profile ? matrixForProfile(*profile) : Mat3x3::identity());
                 commitCTMs();
             }
         }
@@ -151,6 +176,9 @@ int CHyprsunset::init() {
         Debug::log(NONE, "✖ Compositor doesn't support hyprland-ctm-control-v1, are you running on Hyprland?");
         return 0;
     }
+
+    if (m_outputV4Supported)
+        wl_display_roundtrip(state.wlDisplay);
 
     Debug::log(NONE, "┣ Found {} output(s), applying CTMs", state.outputs.size());
 
@@ -276,10 +304,15 @@ void CHyprsunset::tick() {
 }
 
 void CHyprsunset::reload() {
-    calculateMatrix();
-
-    for (auto& o : state.outputs) {
-        o->applyCTM(&state);
+    if (m_manualOverride) {
+        calculateMatrix();
+        for (auto& o : state.outputs)
+            o->applyCTM(&state, state.ctm);
+    } else {
+        for (auto& o : state.outputs) {
+            auto profile = getProfileForOutput(o->name);
+            o->applyCTM(&state, profile ? matrixForProfile(*profile) : Mat3x3::identity());
+        }
     }
 
     commitCTMs();
@@ -293,7 +326,7 @@ void CHyprsunset::loadCurrentProfile() {
 
     Debug::log(NONE, "┣ Loaded {} profiles", profiles.size());
 
-    std::sort(profiles.begin(), profiles.end(), [](const auto& a, const auto& b) {
+    std::ranges::sort(profiles, [](const auto& a, const auto& b) {
         if (a.time.hour < b.time.hour)
             return true;
         else if (a.time.hour > b.time.hour)
@@ -302,84 +335,88 @@ void CHyprsunset::loadCurrentProfile() {
             return a.time.minute < b.time.minute;
     });
 
-    int current = g_pHyprsunset->currentProfile();
-
-    if (current == -1)
-        return;
-
-    SSunsetProfile profile = g_pHyprsunset->profiles[current];
-    KELVIN                 = profile.temperature;
-    GAMMA                  = profile.gamma;
-    identity               = profile.identity;
-
-    Debug::log(NONE, "┣ Applying profile from: {}:{}", profile.time.hour.count(), profile.time.minute.count());
+    m_manualOverride = false;
 }
 
-int CHyprsunset::currentProfile() {
-    if (profiles.empty())
-        return -1;
-    else if (profiles.size() == 1)
-        return 0;
+std::optional<SSunsetProfile> CHyprsunset::pickProfileByTime(const std::vector<const SSunsetProfile*>& sortedProfiles) {
+    if (sortedProfiles.empty())
+        return std::nullopt;
+    if (sortedProfiles.size() == 1)
+        return *sortedProfiles[0];
 
     auto now = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
 
-    for (size_t i = 0; i < profiles.size(); ++i) {
-        const auto& p = profiles[i];
-
+    for (size_t i = 0; i < sortedProfiles.size(); ++i) {
+        const auto& p    = *sortedProfiles[i];
         auto        time = std::chrono::floor<std::chrono::days>(now) + p.time.hour + p.time.minute;
 
         if (time >= now) {
             if (i == 0)
-                return profiles.size() - 1;
-            return i - 1;
+                return *sortedProfiles.back();
+            return *sortedProfiles[i - 1];
         }
     }
 
-    return profiles.size() - 1;
+    return *sortedProfiles.back();
 }
 
 std::optional<SSunsetProfile> CHyprsunset::getCurrentProfile() {
-    int current = currentProfile();
-    if (current < 0)
-        return std::nullopt;
+    std::vector<const SSunsetProfile*> globals;
+    for (const auto& p : profiles | std::views::filter([](const auto& p) { return p.monitor.empty(); }))
+        globals.push_back(&p);
+    return pickProfileByTime(globals);
+}
 
-    return profiles[current];
+std::optional<SSunsetProfile> CHyprsunset::getProfileForOutput(const std::string& outputName) {
+    if (m_outputV4Supported && !outputName.empty()) {
+        std::vector<const SSunsetProfile*> matching;
+        for (const auto& p : profiles | std::views::filter([&outputName](const auto& p) { return p.monitor == outputName; }))
+            matching.push_back(&p);
+        if (auto pick = pickProfileByTime(matching))
+            return pick;
+    }
+
+    std::vector<const SSunsetProfile*> globals;
+    for (const auto& p : profiles | std::views::filter([](const auto& p) { return p.monitor.empty(); }))
+        globals.push_back(&p);
+    return pickProfileByTime(globals);
 }
 
 void CHyprsunset::schedule() {
     std::thread([&]() {
         while (true) {
-            int current = currentProfile();
-            if (current == -1)
+            if (m_bTerminate)
+                break;
+            if (profiles.empty())
                 break;
 
-            SSunsetProfile nextProfile = (size_t)current == profiles.size() - 1 ? profiles[0] : profiles[current + 1];
+            auto now   = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
+            auto today = std::chrono::floor<std::chrono::days>(now);
 
-            auto           now  = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time();
-            auto           time = std::chrono::floor<std::chrono::days>(now) + nextProfile.time.hour + nextProfile.time.minute;
+            // profiles is sorted ascending by time-of-day; find the first profile whose time-of-day is strictly after now.
+            // If all of today's profile times have already passed, wake at the earliest profile tomorrow.
+            auto next = std::ranges::find_if(profiles, [&](const auto& p) { return today + p.time.hour + p.time.minute > now; });
 
-            if (now >= time)
-                time += std::chrono::days(1);
+            auto wake = (next != profiles.end()) ? today + next->time.hour + next->time.minute //
+                                                 : today + std::chrono::days(1) + profiles.front().time.hour + profiles.front().time.minute;
 
-            while (time >= std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time() + std::chrono::minutes(1))
+            while (wake >= std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time() + std::chrono::minutes(1)) {
+                if (m_bTerminate)
+                    return;
                 std::this_thread::sleep_for(std::chrono::minutes(1));
+            }
 
-            auto system_time = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
-
+            auto system_time = std::chrono::zoned_time{std::chrono::current_zone(), wake}.get_sys_time();
             std::this_thread::sleep_until(system_time);
 
-            int newcurrent = currentProfile();
-            if (newcurrent == -1)
+            if (m_bTerminate)
                 break;
 
-            SSunsetProfile              newProfile = profiles[newcurrent];
-
             std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
-            KELVIN   = newProfile.temperature;
-            GAMMA    = newProfile.gamma;
-            identity = newProfile.identity;
 
-            Debug::log(NONE, "┣ Switched to new profile from: {}:{}", newProfile.time.hour.count(), newProfile.time.minute.count());
+            m_manualOverride = false;
+
+            Debug::log(NONE, "┣ Profile transition tick");
 
             m_sEventLoopInternals.shouldProcess = true;
             m_sEventLoopInternals.isScheduled   = true;
