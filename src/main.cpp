@@ -111,6 +111,9 @@ int main(int argc, char** argv, char** envp) {
     if (identity)
         g_pHyprsunset->identity = true;
 
+    if (g_pHyprsunset->ONSWITCH != "")
+        g_pHyprsunset->scheduleOnSwitch();
+
     if (!g_pHyprsunset->calculateMatrix())
         return 1;
     if (!g_pHyprsunset->init())

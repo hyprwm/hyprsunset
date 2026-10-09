@@ -41,6 +41,7 @@ struct SSunsetProfile {
     unsigned long temperature = 6000;
     float         gamma       = 1.0f;
     bool          identity    = false;
+    std::string   onSwitch    = "";
 };
 
 class CHyprsunset {
@@ -48,6 +49,7 @@ class CHyprsunset {
     float                         MAX_GAMMA = 1.0f; // default
     float                         GAMMA     = 1.0f; // default
     unsigned long long            KELVIN    = 6000; // default
+    std::string                   ONSWITCH  = "";   //default
     bool                          kelvinSet = false, identity = false;
     SState                        state;
     bool                          m_bTerminate = false;
@@ -57,6 +59,7 @@ class CHyprsunset {
     void                          tick();
     void                          loadCurrentProfile();
     std::optional<SSunsetProfile> getCurrentProfile();
+    void                          scheduleOnSwitch();
     void                          terminate();
 
     struct {
@@ -66,12 +69,14 @@ class CHyprsunset {
 
         bool                    shouldProcess = false;
         bool                    isScheduled   = false;
+        bool                    runOnSwitch   = false;
     } m_sEventLoopInternals;
 
   private:
     static void                 commitCTMs();
     void                        reload();
     void                        schedule();
+    void                        onSwitch();
     int                         currentProfile();
     void                        startEventLoop();
 

@@ -231,15 +231,18 @@ bool CIPCSocket::mainThreadParseRequest() {
 
     if (copy.find("profile") == 0) {
         if (auto profileOpt = g_pHyprsunset->getCurrentProfile()) {
-            auto  profile = profileOpt.value();
+            auto        profile = profileOpt.value();
 
-            int   hrs   = profile.time.hour.count();
-            int   mins  = profile.time.minute.count();
-            auto  temp  = profile.temperature;
-            float gamma = profile.gamma;
-            bool  ident = profile.identity;
+            int         hrs      = profile.time.hour.count();
+            int         mins     = profile.time.minute.count();
+            auto        temp     = profile.temperature;
+            float       gamma    = profile.gamma;
+            bool        ident    = profile.identity;
+            std::string onSwitch = profile.onSwitch;
 
-            m_szReply = std::format("Time: {:0>2}:{:0>2}\nTemperature: {}\nGamma: {}\nIdentity: {}", hrs, mins, temp, gamma, ident);
+            g_pHyprsunset->scheduleOnSwitch();
+
+            m_szReply = std::format("Time: {:0>2}:{:0>2}\nTemperature: {}\nGamma: {}\nIdentity: {}\nOn-Switch: {}", hrs, mins, temp, gamma, ident, onSwitch);
             return true;
         }
         m_szReply = "No profile is currently loaded";

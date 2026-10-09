@@ -11,6 +11,7 @@
 #include <sys/timerfd.h>
 #include <unistd.h>
 #include <wayland-client-core.h>
+#include <hyprutils/os/Process.hpp>
 
 #define TIMESPEC_NSEC_PER_SEC 1000000000L
 
@@ -67,6 +68,10 @@ void SOutput::applyCTM(struct SState* state) {
     state->pCTMMgr->sendSetCtmForOutput(output->resource(), wl_fixed_from_double(arr[0]), wl_fixed_from_double(arr[1]), wl_fixed_from_double(arr[2]), wl_fixed_from_double(arr[3]),
                                         wl_fixed_from_double(arr[4]), wl_fixed_from_double(arr[5]), wl_fixed_from_double(arr[6]), wl_fixed_from_double(arr[7]),
                                         wl_fixed_from_double(arr[8]));
+}
+
+void CHyprsunset::scheduleOnSwitch() {
+    m_sEventLoopInternals.runOnSwitch = true;
 }
 
 void CHyprsunset::commitCTMs() {
@@ -245,6 +250,11 @@ void CHyprsunset::startEventLoop() {
         else
             tick();
 
+        if (m_sEventLoopInternals.runOnSwitch) {
+            onSwitch();
+            m_sEventLoopInternals.runOnSwitch = false;
+        }
+
         m_sEventLoopInternals.isScheduled = false;
     }
 
@@ -287,6 +297,18 @@ void CHyprsunset::reload() {
     wl_display_flush(state.wlDisplay);
 }
 
+void CHyprsunset::onSwitch() {
+    Debug::log(LOG, "Executing {}", ONSWITCH);
+
+    Hyprutils::OS::CProcess proc("/bin/sh", {"-c", ONSWITCH});
+    if (!proc.runAsync()) {
+        Debug::log(ERR, "Failed run \"{}\"", ONSWITCH);
+        return;
+    }
+
+    Debug::log(LOG, "Process Created with pid {}", proc.pid());
+}
+
 void CHyprsunset::loadCurrentProfile() {
     profiles  = g_pConfigManager->getSunsetProfiles();
     MAX_GAMMA = g_pConfigManager->getMaxGamma();
@@ -310,6 +332,7 @@ void CHyprsunset::loadCurrentProfile() {
     SSunsetProfile profile = g_pHyprsunset->profiles[current];
     KELVIN                 = profile.temperature;
     GAMMA                  = profile.gamma;
+    ONSWITCH               = profile.onSwitch;
     identity               = profile.identity;
 
     Debug::log(NONE, "┣ Applying profile from: {}:{}", profile.time.hour.count(), profile.time.minute.count());
@@ -377,12 +400,14 @@ void CHyprsunset::schedule() {
             std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
             KELVIN   = newProfile.temperature;
             GAMMA    = newProfile.gamma;
+            ONSWITCH = newProfile.onSwitch;
             identity = newProfile.identity;
 
             Debug::log(NONE, "┣ Switched to new profile from: {}:{}", newProfile.time.hour.count(), newProfile.time.minute.count());
 
             m_sEventLoopInternals.shouldProcess = true;
             m_sEventLoopInternals.isScheduled   = true;
+            m_sEventLoopInternals.runOnSwitch   = true;
             m_sEventLoopInternals.loopSignal.notify_all();
         };
     }).detach();
