@@ -8,8 +8,9 @@ class CConfigManager {
   public:
     CConfigManager(std::string configPath);
 
-    std::vector<SSunsetProfile> getSunsetProfiles();
-    float                       getMaxGamma();
+    std::vector<SSunsetProfile>  getSunsetProfiles();
+    std::vector<SOutputOverride> getOutputOverrides();
+    float                        getMaxGamma();
 
     void                        init();
 
