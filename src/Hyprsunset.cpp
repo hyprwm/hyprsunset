@@ -386,9 +386,9 @@ void CHyprsunset::schedule() {
             if (now >= time)
                 time += std::chrono::days(1);
 
-            auto     system_time = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
-            auto     seconds     = std::chrono::duration_cast<std::chrono::seconds>(system_time.time_since_epoch());
-            timespec deadline    = {.tv_sec = static_cast<time_t>(seconds.count()), .tv_nsec = 0};
+            auto     systemTime = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
+            auto     seconds    = std::chrono::duration_cast<std::chrono::seconds>(systemTime.time_since_epoch());
+            timespec deadline   = {.tv_sec = static_cast<time_t>(seconds.count()), .tv_nsec = 0};
 
             // Relative sleeps pause during suspend. An absolute realtime deadline
             // expires during suspend and returns immediately when the system wakes.
