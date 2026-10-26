@@ -2,6 +2,7 @@
 #include "helpers/Log.hpp"
 #include "IPCSocket.hpp"
 #include <algorithm>
+#include <cerrno>
 #include <cstring>
 #include <mutex>
 #include <optional>
@@ -9,6 +10,7 @@
 #include <chrono>
 #include <sys/poll.h>
 #include <sys/timerfd.h>
+#include <time.h>
 #include <unistd.h>
 #include <wayland-client-core.h>
 #include <hyprutils/os/Process.hpp>
@@ -384,12 +386,21 @@ void CHyprsunset::schedule() {
             if (now >= time)
                 time += std::chrono::days(1);
 
-            while (time >= std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::system_clock::now()).get_local_time() + std::chrono::minutes(1))
-                std::this_thread::sleep_for(std::chrono::minutes(1));
+            auto     systemTime = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
+            auto     seconds    = std::chrono::duration_cast<std::chrono::seconds>(systemTime.time_since_epoch());
+            timespec deadline   = {.tv_sec = static_cast<time_t>(seconds.count()), .tv_nsec = 0};
 
-            auto system_time = std::chrono::zoned_time{std::chrono::current_zone(), time}.get_sys_time();
+            // Relative sleeps pause during suspend. An absolute realtime deadline
+            // expires during suspend and returns immediately when the system wakes.
+            int error;
+            do {
+                error = clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &deadline, nullptr);
+            } while (error == EINTR);
 
-            std::this_thread::sleep_until(system_time);
+            if (error != 0) {
+                Debug::log(ERR, "Failed to wait for profile switch: {}", std::strerror(error));
+                break;
+            }
 
             int newcurrent = currentProfile();
             if (newcurrent == -1)
