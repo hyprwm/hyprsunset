@@ -2,6 +2,7 @@
 #include "src/helpers/Log.hpp"
 
 static void printHelp() {
+    Debug::log(NONE, "┣ --config            -c  →  Specify a custom config file path");
     Debug::log(NONE, "┣ --gamma             -g  →  Set the display gamma (default 100%)");
     Debug::log(NONE, "┣ --gamma_max             →  Set the maximum display gamma (default 100%, maximum 200%)");
     Debug::log(NONE, "┣ --temperature       -t  →  Set the temperature in K (default 6000)");
@@ -74,6 +75,7 @@ int main(int argc, char** argv, char** envp) {
             }
 
             configPath = argv[i + 1];
+            ++i;
         } else if (argv[i] == std::string{"-h"} || argv[i] == std::string{"--help"}) {
             printHelp();
             return 0;
