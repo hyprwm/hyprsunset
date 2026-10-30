@@ -3,11 +3,13 @@
 #include "helpers/Log.hpp"
 
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <format>
 #include <netinet/in.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -17,7 +19,7 @@
 #include <thread>
 
 void CIPCSocket::initialize() {
-    std::thread([&]() {
+    m_thread = std::thread([&]() {
         const auto SOCKET = socket(AF_UNIX, SOCK_STREAM, 0);
 
         if (SOCKET < 0) {
@@ -52,18 +54,86 @@ void CIPCSocket::initialize() {
 
         char        readBuffer[1024] = {0};
 
+        const int   stopFd = g_pHyprsunset->m_stopFd;
+
         Debug::log(LOG, "hyprsunset socket started at {} (fd: {})", socketPath, SOCKET);
         while (1) {
+            if (g_pHyprsunset->m_bTerminate.load())
+                break;
+
+            pollfd listenPfds[2] = {};
+            listenPfds[0]        = {.fd = SOCKET, .events = POLLIN};
+            nfds_t listenNfds    = 1;
+            if (stopFd >= 0) {
+                listenPfds[1] = {.fd = stopFd, .events = POLLIN};
+                listenNfds    = 2;
+            }
+
+            int listenRc = poll(listenPfds, listenNfds, -1);
+            if (listenRc < 0) {
+                if (errno == EINTR)
+                    continue;
+                Debug::log(ERR, "Couldn't listen on the hyprsunset Socket. (3) IPC will not work.");
+                break;
+            }
+
+            if (g_pHyprsunset->m_bTerminate.load() || (listenNfds == 2 && (listenPfds[1].revents & POLLIN)))
+                break;
+            // POLLIN can arrive together with POLLHUP. Read that connection before treating hangup as fatal.
+            if (!(listenPfds[0].revents & POLLIN)) {
+                if (listenPfds[0].revents & (POLLERR | POLLHUP | POLLNVAL))
+                    break;
+                continue;
+            }
+
             const auto ACCEPTEDCONNECTION = accept(SOCKET, (sockaddr*)&clientAddress, &clientSize);
             if (ACCEPTEDCONNECTION < 0) {
+                if (errno == EINTR || errno == EAGAIN || errno == ECONNABORTED)
+                    continue;
                 Debug::log(ERR, "Couldn't listen on the hyprsunset Socket. (3) IPC will not work.");
                 break;
             } else {
+                bool stop = false;
                 do {
+                    if (g_pHyprsunset->m_bTerminate.load()) {
+                        stop = true;
+                        break;
+                    }
+
+                    pollfd clientPfds[2] = {};
+                    clientPfds[0]        = {.fd = ACCEPTEDCONNECTION, .events = POLLIN};
+                    nfds_t clientNfds    = 1;
+                    if (stopFd >= 0) {
+                        clientPfds[1] = {.fd = stopFd, .events = POLLIN};
+                        clientNfds    = 2;
+                    }
+
+                    int clientRc = poll(clientPfds, clientNfds, -1);
+                    if (clientRc < 0) {
+                        if (errno == EINTR)
+                            continue;
+                        break;
+                    }
+
+                    if (g_pHyprsunset->m_bTerminate.load() || (clientNfds == 2 && (clientPfds[1].revents & POLLIN))) {
+                        stop = true;
+                        break;
+                    }
+                    if (!(clientPfds[0].revents & POLLIN)) {
+                        if (clientPfds[0].revents & (POLLERR | POLLHUP | POLLNVAL))
+                            break;
+                        continue;
+                    }
+
                     Debug::log(LOG, "Accepted incoming socket connection request on fd {}", ACCEPTEDCONNECTION);
                     std::lock_guard<std::mutex> lg(g_pHyprsunset->m_sEventLoopInternals.loopRequestMutex);
 
-                    auto                        messageSize              = read(ACCEPTEDCONNECTION, readBuffer, 1024);
+                    auto                        messageSize = read(ACCEPTEDCONNECTION, readBuffer, 1024);
+                    if (messageSize < 0) {
+                        if (errno == EINTR || errno == EAGAIN)
+                            continue;
+                        break;
+                    }
                     readBuffer[messageSize == 1024 ? 1023 : messageSize] = '\0';
                     if (messageSize == 0)
                         break;
@@ -72,9 +142,14 @@ void CIPCSocket::initialize() {
                     m_szRequest     = request;
                     m_bRequestReady = true;
 
-                    g_pHyprsunset->tick();
-                    while (!m_bReplyReady) { // wait for Hyprsunset to finish processing the request
+                    if (!g_pHyprsunset->m_bTerminate.load())
+                        g_pHyprsunset->tick();
+                    while (!m_bReplyReady && !g_pHyprsunset->m_bTerminate.load()) { // wait for Hyprsunset to finish processing the request
                         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    }
+                    if (g_pHyprsunset->m_bTerminate.load()) {
+                        stop = true;
+                        break;
                     }
                     write(ACCEPTEDCONNECTION, m_szReply.c_str(), m_szReply.length());
                     m_bReplyReady = false;
@@ -83,11 +158,29 @@ void CIPCSocket::initialize() {
                 } while (1);
                 Debug::log(LOG, "Closing Accepted Connection");
                 close(ACCEPTEDCONNECTION);
+                if (stop)
+                    break;
             }
         }
 
         close(SOCKET);
-    }).detach();
+    });
+}
+
+void CIPCSocket::stop() {
+    if (!m_thread.joinable())
+        return;
+
+    // The hyprsunset global may already have been destroyed at exit.
+    if (g_hyprsunsetAlive.load(std::memory_order_acquire))
+        g_pHyprsunset->signalStop();
+
+    m_thread.join();
+}
+
+CIPCSocket::~CIPCSocket() {
+    g_ipcSocketAlive.store(false, std::memory_order_release);
+    stop();
 }
 
 bool CIPCSocket::mainThreadParseRequest() {
