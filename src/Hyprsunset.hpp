@@ -19,7 +19,8 @@ using namespace Hyprutils::Memory;
 struct SOutput {
     SP<CCWlOutput> output;
     uint32_t       id = 0;
-    void           applyCTM(struct SState*);
+    std::string    name;
+    void           applyCTM(struct SState*, const Mat3x3& ctm);
 };
 
 struct SState {
@@ -30,6 +31,13 @@ struct SState {
     bool                              initialized = false;
     Mat3x3                            ctm;
     int                               timerFD = -1;
+};
+
+struct SOutputOverride {
+    std::string   name;
+    unsigned long temperature = 6000;
+    float         gamma       = 1.0f;
+    bool          identity    = false;
 };
 
 struct SSunsetProfile {
@@ -80,7 +88,8 @@ class CHyprsunset {
     int                         currentProfile();
     void                        startEventLoop();
 
-    std::vector<SSunsetProfile> profiles;
+    std::vector<SSunsetProfile>  profiles;
+    std::vector<SOutputOverride> outputOverrides;
 };
 
 inline std::unique_ptr<CHyprsunset> g_pHyprsunset;
