@@ -1,5 +1,7 @@
+#include <atomic>
 #include <cmath>
 #include <sys/signal.h>
+#include <thread>
 #include <wayland-client.h>
 #include <vector>
 #include <mutex>
@@ -46,13 +48,20 @@ struct SSunsetProfile {
 
 class CHyprsunset {
   public:
-    float                         MAX_GAMMA = 1.0f; // default
-    float                         GAMMA     = 1.0f; // default
-    unsigned long long            KELVIN    = 6000; // default
-    std::string                   ONSWITCH  = "";   //default
-    bool                          kelvinSet = false, identity = false;
-    SState                        state;
-    bool                          m_bTerminate = false;
+    float              MAX_GAMMA = 1.0f; // default
+    float              GAMMA     = 1.0f; // default
+    unsigned long long KELVIN    = 6000; // default
+    std::string        ONSWITCH  = "";   //default
+    bool               kelvinSet = false, identity = false;
+    SState             state;
+    // Written from the SIGTERM handler and read by the worker threads.
+    std::atomic<bool> m_bTerminate{false};
+    // Stays readable after the first wake so every waiter observes shutdown
+    // without consuming the counter out from under the others.
+    int m_stopFd = -1;
+
+    CHyprsunset();
+    ~CHyprsunset();
 
     int                           calculateMatrix();
     int                           init();
@@ -61,6 +70,8 @@ class CHyprsunset {
     std::optional<SSunsetProfile> getCurrentProfile();
     void                          scheduleOnSwitch();
     void                          terminate();
+    // Async-signal-safe. Wakes the schedule and IPC threads blocked in poll.
+    void signalStop();
 
     struct {
         std::condition_variable loopSignal;
@@ -73,14 +84,21 @@ class CHyprsunset {
     } m_sEventLoopInternals;
 
   private:
-    static void                 commitCTMs();
-    void                        reload();
-    void                        schedule();
-    void                        onSwitch();
-    int                         currentProfile();
-    void                        startEventLoop();
+    static void commitCTMs();
+    void        reload();
+    void        schedule();
+    void        onSwitch();
+    int         currentProfile();
+    void        startEventLoop();
+    // Join workers before dropping the CTM manager or returning from main.
+    // Otherwise a detached thread calls current_zone() or reload() while
+    // those objects are being destroyed.
+    void                        shutdownWorkers();
 
+    std::thread                 m_scheduleThread;
     std::vector<SSunsetProfile> profiles;
 };
 
+// Cleared at the start of ~CHyprsunset. See g_ipcSocketAlive.
+inline std::atomic<bool>            g_hyprsunsetAlive{false};
 inline std::unique_ptr<CHyprsunset> g_pHyprsunset;

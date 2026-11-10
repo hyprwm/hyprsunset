@@ -8,6 +8,7 @@
 #include <optional>
 #include <thread>
 #include <chrono>
+#include <sys/eventfd.h>
 #include <sys/poll.h>
 #include <sys/timerfd.h>
 #include <time.h>
@@ -66,6 +67,9 @@ static Mat3x3 matrixForKelvin(unsigned long long temp) {
 }
 
 void SOutput::applyCTM(struct SState* state) {
+    if (!state->pCTMMgr)
+        return;
+
     auto arr = state->ctm.getMatrix();
     state->pCTMMgr->sendSetCtmForOutput(output->resource(), wl_fixed_from_double(arr[0]), wl_fixed_from_double(arr[1]), wl_fixed_from_double(arr[2]), wl_fixed_from_double(arr[3]),
                                         wl_fixed_from_double(arr[4]), wl_fixed_from_double(arr[5]), wl_fixed_from_double(arr[6]), wl_fixed_from_double(arr[7]),
@@ -77,6 +81,9 @@ void CHyprsunset::scheduleOnSwitch() {
 }
 
 void CHyprsunset::commitCTMs() {
+    if (!g_pHyprsunset || !g_pHyprsunset->state.pCTMMgr)
+        return;
+
     g_pHyprsunset->state.pCTMMgr->sendCommit();
 }
 
@@ -105,6 +112,10 @@ int CHyprsunset::calculateMatrix() {
     return 1;
 }
 
+CHyprsunset::CHyprsunset() {
+    g_hyprsunsetAlive.store(true, std::memory_order_release);
+}
+
 int CHyprsunset::init() {
     // connect to the wayland server
     if (const auto SERVER = getenv("XDG_CURRENT_DESKTOP"); SERVER)
@@ -129,9 +140,9 @@ int CHyprsunset::init() {
                 (wl_proxy*)wl_registry_bind((wl_registry*)state.pRegistry->resource(), name, &hyprland_ctm_control_manager_v1_interface, targetVersion));
 
             if (targetVersion >= 2) {
-                state.pCTMMgr->setBlocked([](CCHyprlandCtmControlManagerV1*) {
+                state.pCTMMgr->setBlocked([this](CCHyprlandCtmControlManagerV1*) {
                     Debug::log(NONE, "✖ A CTM manager is already running on the current compositor.");
-                    exit(1);
+                    terminate();
                 });
             }
         } else if (IFACE == wl_output_interface.name) {
@@ -159,6 +170,15 @@ int CHyprsunset::init() {
         return 0;
     }
 
+    if (m_bTerminate.load())
+        return 0;
+
+    m_stopFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (m_stopFd < 0) {
+        Debug::log(NONE, "✖ Couldn't create the shutdown eventfd: {}", std::strerror(errno));
+        return 0;
+    }
+
     Debug::log(NONE, "┣ Found {} output(s), applying CTMs", state.outputs.size());
 
     reload();
@@ -166,6 +186,7 @@ int CHyprsunset::init() {
     state.initialized = true;
 
     g_pIPCSocket = std::make_unique<CIPCSocket>();
+    g_ipcSocketAlive.store(true, std::memory_order_release);
     g_pIPCSocket->initialize();
 
     registerSignalAction(SIGTERM, ::handleExitSignal);
@@ -191,14 +212,14 @@ void CHyprsunset::startEventLoop() {
         },
     };
 
-    bool wlEventsPending = false;
+    bool        wlEventsPending = false;
 
     std::thread pollThread([&]() {
         while (1) {
             bool preparedToRead = wl_display_prepare_read(state.wlDisplay) == 0;
             int  ret            = 0;
 
-            if (m_bTerminate)
+            if (m_bTerminate.load())
                 break;
 
             if (preparedToRead) {
@@ -234,7 +255,7 @@ void CHyprsunset::startEventLoop() {
         if (!m_sEventLoopInternals.shouldProcess)
             m_sEventLoopInternals.loopSignal.wait_for(lk, std::chrono::milliseconds(5000), [this] { return m_sEventLoopInternals.shouldProcess; });
 
-        if (m_bTerminate)
+        if (m_bTerminate.load())
             break;
 
         std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
@@ -261,7 +282,10 @@ void CHyprsunset::startEventLoop() {
     }
 
     Debug::log(TRACE, "Exiting loop");
-    m_bTerminate = true;
+
+    // Workers call current_zone() and reload(). Join them before the CTM
+    // manager is released and before main() returns into static destruction.
+    shutdownWorkers();
 
     // cleanup wl resources
     state.outputs.clear();
@@ -371,9 +395,69 @@ std::optional<SSunsetProfile> CHyprsunset::getCurrentProfile() {
     return profiles[current];
 }
 
+// Relative sleeps pause during suspend. An absolute CLOCK_REALTIME timer is
+// already expired when the machine wakes after the deadline. The stop fd is
+// polled with it so shutdown does not wait out that deadline.
+static bool waitUntilRealtime(int stopFd, const std::atomic<bool>& terminate, timespec deadline) {
+    if (terminate.load())
+        return false;
+
+    int timerFd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (timerFd < 0) {
+        Debug::log(ERR, "Failed to create profile timer: {}", std::strerror(errno));
+        return false;
+    }
+
+    itimerspec its{};
+    its.it_value = deadline;
+    // A zero value disarms a timerfd. One nanosecond past the epoch is still
+    // in the past, so the timer expires immediately instead.
+    if (its.it_value.tv_sec == 0 && its.it_value.tv_nsec == 0)
+        its.it_value.tv_nsec = 1;
+
+    if (timerfd_settime(timerFd, TFD_TIMER_ABSTIME, &its, nullptr) != 0) {
+        Debug::log(ERR, "Failed to wait for profile switch: {}", std::strerror(errno));
+        close(timerFd);
+        return false;
+    }
+
+    pollfd pfds[2] = {};
+    pfds[0]        = {.fd = timerFd, .events = POLLIN};
+    nfds_t nfds    = 1;
+    if (stopFd >= 0) {
+        pfds[1] = {.fd = stopFd, .events = POLLIN};
+        nfds    = 2;
+    }
+
+    bool reached = false;
+    while (!terminate.load()) {
+        int rc = poll(pfds, nfds, -1);
+        if (rc < 0) {
+            if (errno == EINTR)
+                continue;
+            Debug::log(ERR, "Failed to wait for profile switch: {}", std::strerror(errno));
+            break;
+        }
+
+        if (terminate.load() || (nfds == 2 && (pfds[1].revents & POLLIN)))
+            break;
+
+        if (pfds[0].revents & (POLLERR | POLLHUP | POLLNVAL))
+            break;
+
+        if (pfds[0].revents & POLLIN) {
+            reached = true;
+            break;
+        }
+    }
+
+    close(timerFd);
+    return reached;
+}
+
 void CHyprsunset::schedule() {
-    std::thread([&]() {
-        while (true) {
+    m_scheduleThread = std::thread([this] {
+        while (!m_bTerminate.load()) {
             int current = currentProfile();
             if (current == -1)
                 break;
@@ -390,25 +474,19 @@ void CHyprsunset::schedule() {
             auto     seconds    = std::chrono::duration_cast<std::chrono::seconds>(systemTime.time_since_epoch());
             timespec deadline   = {.tv_sec = static_cast<time_t>(seconds.count()), .tv_nsec = 0};
 
-            // Relative sleeps pause during suspend. An absolute realtime deadline
-            // expires during suspend and returns immediately when the system wakes.
-            int error;
-            do {
-                error = clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &deadline, nullptr);
-            } while (error == EINTR);
-
-            if (error != 0) {
-                Debug::log(ERR, "Failed to wait for profile switch: {}", std::strerror(error));
+            if (!waitUntilRealtime(m_stopFd, m_bTerminate, deadline) || m_bTerminate.load())
                 break;
-            }
 
             int newcurrent = currentProfile();
-            if (newcurrent == -1)
+            if (newcurrent == -1 || m_bTerminate.load())
                 break;
 
             SSunsetProfile              newProfile = profiles[newcurrent];
 
             std::lock_guard<std::mutex> lg(m_sEventLoopInternals.loopRequestMutex);
+            if (m_bTerminate.load())
+                break;
+
             KELVIN   = newProfile.temperature;
             GAMMA    = newProfile.gamma;
             ONSWITCH = newProfile.onSwitch;
@@ -420,13 +498,58 @@ void CHyprsunset::schedule() {
             m_sEventLoopInternals.isScheduled   = true;
             m_sEventLoopInternals.runOnSwitch   = true;
             m_sEventLoopInternals.loopSignal.notify_all();
-        };
-    }).detach();
+        }
+    });
+}
+
+static_assert(std::atomic<bool>::is_always_lock_free, "SIGTERM handler stores m_bTerminate");
+
+void CHyprsunset::signalStop() {
+    m_bTerminate.store(true);
+
+    if (m_stopFd < 0)
+        return;
+
+    // write() is async-signal-safe. EAGAIN means an earlier wake already saturated the counter.
+    const uint64_t value      = 1;
+    const int      savedErrno = errno;
+    (void)write(m_stopFd, &value, sizeof(value));
+    errno = savedErrno;
+}
+
+void CHyprsunset::shutdownWorkers() {
+    signalStop();
+
+    if (m_scheduleThread.joinable())
+        m_scheduleThread.join();
+
+    if (g_ipcSocketAlive.load(std::memory_order_acquire))
+        g_pIPCSocket->stop();
+}
+
+CHyprsunset::~CHyprsunset() {
+    // Wake any worker that is still blocked, then drop the liveness flag
+    // before either thread is joined. After this, ~CIPCSocket must not
+    // touch this object. The socket global is left alone: exit may already
+    // have freed it, and its destructor joins the IPC thread.
+    signalStop();
+    g_hyprsunsetAlive.store(false, std::memory_order_release);
+
+    if (m_scheduleThread.joinable())
+        m_scheduleThread.join();
+
+    if (g_ipcSocketAlive.load(std::memory_order_acquire))
+        g_pIPCSocket->stop();
+
+    if (m_stopFd >= 0) {
+        close(m_stopFd);
+        m_stopFd = -1;
+    }
 }
 
 void CHyprsunset::terminate() {
+    signalStop();
+
     m_sEventLoopInternals.shouldProcess = true;
     m_sEventLoopInternals.loopSignal.notify_all();
-
-    m_bTerminate = true;
 }
