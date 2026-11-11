@@ -5,7 +5,7 @@ An application to enable a blue-light filter on Hyprland
 > This app requires hyprland>=0.45.0
 
 ## Docs / Configuration
-[See the wiki](https://wiki.hypr.land/Hypr-Ecosystem/hyprsunset/)
+[See the wiki](https://wiki.hypr.land/hypr-ecosystem/user/hyprsunset/)
 
 ## Support
 
