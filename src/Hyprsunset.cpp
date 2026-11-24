@@ -45,7 +45,7 @@ static void timespecAddNs(timespec* pTimespec, int64_t delta) {
 }
 
 // kindly borrowed from https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html
-static Mat3x3 matrixForKelvin(unsigned long long temp) {
+static Mat3x3 matrixForKelvin(float temp) {
     float r = 1.F, g = 1.F, b = 1.F;
 
     temp /= 100.F;
